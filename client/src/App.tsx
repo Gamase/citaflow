@@ -1,19 +1,30 @@
-import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  return token ? <>{children}</> : <Navigate to="/login" />;
+}
 
 function App() {
-  const [status, setStatus] = useState("cargando...");
-
-  useEffect(() => {
-    fetch("http://localhost:3000/health")
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status))
-      .catch(() => setStatus("error de conexión"));
-  }, []);
-
   return (
-    <div className="flex h-screen items-center justify-center">
-      <h1 className="text-2xl font-bold">Backend dice: {status}</h1>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/login" />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
