@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
 
 const router = Router();
@@ -17,16 +17,28 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   const { nombre, duracionMin, precio } = req.body;
 
-  const service = await prisma.service.create({
-    data: {
-      nombre,
-      duracionMin,
-      precio,
-      tenantId: req.tenantId as string,
+  const existente = await prisma.service.findFirst({
+    where: {
+      tenantId: req.tenantId,
+      nombre: { equals: nombre.trim(), mode: "insensitive" },
     },
   });
 
-  res.status(201).json(service);
+  if (existente) {
+    return res.status(409).json({ error: "Ya existe un servicio con ese nombre" });
+  }
+
+  try {
+    const service = await prisma.service.create({
+      data: { nombre: nombre.trim(), duracionMin, precio, tenantId: req.tenantId as string },
+    });
+    res.status(201).json(service);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ error: "Ya existe un servicio con ese nombre" });
+    }
+    throw err;
+  }
 });
 
 export default router;
