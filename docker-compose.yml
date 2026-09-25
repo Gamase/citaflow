@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: citaflow_user
+      POSTGRES_PASSWORD: citaflow_pass
+      POSTGRES_DB: citaflow_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
