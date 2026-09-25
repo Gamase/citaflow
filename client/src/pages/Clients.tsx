@@ -24,6 +24,12 @@ export default function Clients() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (!/^\d{10}$/.test(telefono)) {
+      setError("El teléfono debe tener 10 dígitos.");
+      return;
+    }
+
     try {
       await api.post("/clients", { nombre, telefono, email: email || undefined });
       setNombre("");
@@ -32,6 +38,16 @@ export default function Clients() {
       load();
     } catch (err: any) {
       setError(err.response?.data?.error ?? "No se pudo agregar el cliente.");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setError("");
+    try {
+      await api.delete(`/clients/${id}`);
+      load();
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? "No se pudo eliminar el cliente.");
     }
   }
 
@@ -54,7 +70,7 @@ export default function Clients() {
         />
         <input
           className="h-10 w-40 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Teléfono"
+          placeholder="Teléfono (10 dígitos)"
           value={telefono}
           onChange={(e) => setTelefono(e.target.value)}
           required
@@ -80,7 +96,15 @@ export default function Clients() {
             className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
           >
             <span className="font-medium text-[var(--color-ink)]">{c.nombre}</span>
-            <span className="text-sm text-gray-500">{c.telefono}</span>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-500">{c.telefono}</span>
+              <button
+                onClick={() => handleDelete(c.id)}
+                className="text-sm text-red-500 hover:text-red-700"
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         ))}
         {clients.length === 0 && (

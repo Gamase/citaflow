@@ -70,4 +70,21 @@ router.post("/", async (req, res) => {
   res.status(201).json(appointment);
 });
 
+router.patch("/:id/cancelar", async (req, res) => {
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: req.params.id, tenantId: req.tenantId },
+  });
+
+  if (!appointment) {
+    return res.status(404).json({ error: "Cita no encontrada" });
+  }
+
+  const actualizada = await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: { estado: "CANCELADA" },
+  });
+
+  res.json(actualizada);
+});
+
 export default router;

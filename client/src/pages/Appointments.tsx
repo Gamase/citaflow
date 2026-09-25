@@ -54,6 +54,16 @@ export default function Appointments() {
     }
   }
 
+  async function handleCancelar(id: string) {
+    setError("");
+    try {
+      await api.patch(`/appointments/${id}/cancelar`);
+      load();
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? "No se pudo cancelar la cita.");
+    }
+  }
+
   const estadoColor: Record<string, string> = {
     PENDIENTE: "bg-[var(--color-amber)]",
     CONFIRMADA: "bg-[var(--color-teal)]",
@@ -69,10 +79,10 @@ export default function Appointments() {
 
       <form
         onSubmit={handleSubmit}
-        className="mb-2 flex flex-wrap gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+        className="mb-2 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
       >
         <select
-          className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+          className="h-10 rounded-md border border-[var(--color-border)] px-3 text-sm"
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           required
@@ -85,7 +95,7 @@ export default function Appointments() {
           ))}
         </select>
         <select
-          className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+          className="h-10 rounded-md border border-[var(--color-border)] px-3 text-sm"
           value={serviceId}
           onChange={(e) => setServiceId(e.target.value)}
           required
@@ -98,13 +108,13 @@ export default function Appointments() {
           ))}
         </select>
         <input
-          className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+          className="h-10 rounded-md border border-[var(--color-border)] px-3 text-sm"
           type="datetime-local"
           value={fechaHora}
           onChange={(e) => setFechaHora(e.target.value)}
           required
         />
-        <button className="rounded-md bg-[var(--color-teal)] px-4 py-2 text-sm font-medium text-white">
+        <button className="h-10 shrink-0 whitespace-nowrap rounded-md bg-[var(--color-teal)] px-4 text-sm font-medium text-white">
           Agendar
         </button>
       </form>
@@ -124,11 +134,21 @@ export default function Appointments() {
                 {a.service.nombre} · {new Date(a.fechaHora).toLocaleString("es-MX")}
               </p>
             </div>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium text-white ${estadoColor[a.estado]}`}
-            >
-              {a.estado}
-            </span>
+            <div className="flex items-center gap-4">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium text-white ${estadoColor[a.estado]}`}
+              >
+                {a.estado}
+              </span>
+              {a.estado !== "CANCELADA" && (
+                <button
+                  onClick={() => handleCancelar(a.id)}
+                  className="text-sm text-red-500 hover:text-red-700"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
           </div>
         ))}
         {appointments.length === 0 && (

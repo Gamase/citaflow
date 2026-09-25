@@ -39,6 +39,16 @@ export default function Services() {
     }
   }
 
+  async function handleDelete(id: string) {
+    setError("");
+    try {
+      await api.delete(`/services/${id}`);
+      load();
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? "No se pudo eliminar el servicio.");
+    }
+  }
+
   return (
     <div className="max-w-2xl">
       <h2 className="mb-6 font-[var(--font-display)] text-3xl font-semibold text-[var(--color-ink)]">
@@ -47,17 +57,17 @@ export default function Services() {
 
       <form
         onSubmit={handleSubmit}
-        className="mb-2 flex gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+        className="mb-2 flex items-center gap-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
       >
         <input
-          className="flex-1 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+          className="h-10 min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-3 text-sm"
           placeholder="Nombre del servicio"
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
           required
         />
         <input
-          className="w-28 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+          className="h-10 w-28 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
           placeholder="Minutos"
           type="number"
           value={duracionMin}
@@ -65,14 +75,14 @@ export default function Services() {
           required
         />
         <input
-          className="w-28 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+          className="h-10 w-28 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
           placeholder="Precio"
           type="number"
           value={precio}
           onChange={(e) => setPrecio(e.target.value)}
           required
         />
-        <button className="rounded-md bg-[var(--color-teal)] px-4 py-2 text-sm font-medium text-white">
+        <button className="h-10 shrink-0 whitespace-nowrap rounded-md bg-[var(--color-teal)] px-4 text-sm font-medium text-white">
           Agregar
         </button>
       </form>
@@ -87,9 +97,17 @@ export default function Services() {
             className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
           >
             <span className="font-medium text-[var(--color-ink)]">{s.nombre}</span>
-            <span className="text-sm text-gray-500">
-              {s.duracionMin} min · ${s.precio}
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-500">
+                {s.duracionMin} min · ${s.precio}
+              </span>
+              <button
+                onClick={() => handleDelete(s.id)}
+                className="text-sm text-red-500 hover:text-red-700"
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         ))}
         {services.length === 0 && (

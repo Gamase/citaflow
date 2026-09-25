@@ -17,6 +17,10 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   const { nombre, telefono, email } = req.body;
 
+  if (!/^\d{10}$/.test(telefono)) {
+    return res.status(400).json({ error: "El teléfono debe tener 10 dígitos" });
+  }
+
   try {
     const client = await prisma.client.create({
       data: { nombre, telefono, email, tenantId: req.tenantId as string },
@@ -28,6 +32,27 @@ router.post("/", async (req, res) => {
     }
     throw err;
   }
+});
+
+router.delete("/:id", async (req, res) => {
+  const client = await prisma.client.findFirst({
+    where: { id: req.params.id, tenantId: req.tenantId },
+  });
+
+  if (!client) {
+    return res.status(404).json({ error: "Cliente no encontrado" });
+  }
+
+  const citasLigadas = await prisma.appointment.count({
+    where: { clientId: client.id },
+  });
+
+  if (citasLigadas > 0) {
+    return res.status(409).json({ error: "No se puede eliminar: tiene citas asociadas" });
+  }
+
+  await prisma.client.delete({ where: { id: client.id } });
+  res.status(204).send();
 });
 
 export default router;

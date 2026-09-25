@@ -41,4 +41,25 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.delete("/:id", async (req, res) => {
+  const service = await prisma.service.findFirst({
+    where: { id: req.params.id, tenantId: req.tenantId },
+  });
+
+  if (!service) {
+    return res.status(404).json({ error: "Servicio no encontrado" });
+  }
+
+  const citasLigadas = await prisma.appointment.count({
+    where: { serviceId: service.id },
+  });
+
+  if (citasLigadas > 0) {
+    return res.status(409).json({ error: "No se puede eliminar: tiene citas asociadas" });
+  }
+
+  await prisma.service.delete({ where: { id: service.id } });
+  res.status(204).send();
+});
+
 export default router;
