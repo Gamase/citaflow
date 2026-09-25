@@ -9,7 +9,7 @@ router.use(verificarToken);
 
 router.get("/", async (req, res) => {
   const services = await prisma.service.findMany({
-    where: { tenantId: req.tenantId },
+    where: { tenantId: req.tenantId as string },
   });
   res.json(services);
 });
@@ -19,7 +19,7 @@ router.post("/", async (req, res) => {
 
   const existente = await prisma.service.findFirst({
     where: {
-      tenantId: req.tenantId,
+      tenantId: req.tenantId as string,
       nombre: { equals: nombre.trim(), mode: "insensitive" },
     },
   });
@@ -45,7 +45,7 @@ router.patch("/:id", async (req, res) => {
   const { nombre, duracionMin, precio } = req.body;
 
   const service = await prisma.service.findFirst({
-    where: { id: req.params.id, tenantId: req.tenantId },
+    where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
   if (!service) {
@@ -54,7 +54,7 @@ router.patch("/:id", async (req, res) => {
 
   const duplicado = await prisma.service.findFirst({
     where: {
-      tenantId: req.tenantId,
+      tenantId: req.tenantId as string,
       nombre: { equals: nombre.trim(), mode: "insensitive" },
       NOT: { id: service.id },
     },
@@ -74,7 +74,7 @@ router.patch("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const service = await prisma.service.findFirst({
-    where: { id: req.params.id, tenantId: req.tenantId },
+    where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
   if (!service) {

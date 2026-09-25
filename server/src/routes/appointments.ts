@@ -9,7 +9,7 @@ router.use(verificarToken);
 
 router.get("/", async (req, res) => {
   const appointments = await prisma.appointment.findMany({
-    where: { tenantId: req.tenantId },
+    where: { tenantId: req.tenantId as string },
     include: { client: true, service: true },
     orderBy: { fechaHora: "asc" },
   });
@@ -20,7 +20,7 @@ router.post("/", async (req, res) => {
   const { clientId, serviceId, fechaHora } = req.body;
 
   const service = await prisma.service.findFirst({
-    where: { id: serviceId, tenantId: req.tenantId },
+    where: { id: serviceId, tenantId: req.tenantId as string },
   });
 
   if (!service) {
@@ -32,7 +32,7 @@ router.post("/", async (req, res) => {
 
   const conflicto = await prisma.appointment.findFirst({
     where: {
-      tenantId: req.tenantId,
+      tenantId: req.tenantId as string,
       estado: { not: "CANCELADA" },
       AND: [
         { fechaHora: { lt: fin } },
@@ -72,7 +72,7 @@ router.post("/", async (req, res) => {
 
 router.patch("/:id/cancelar", async (req, res) => {
   const appointment = await prisma.appointment.findFirst({
-    where: { id: req.params.id, tenantId: req.tenantId },
+    where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
   if (!appointment) {

@@ -24,8 +24,12 @@ export function verificarToken(req: Request, res: Response, next: NextFunction) 
 
   const token = authHeader.split(" ")[1];
 
+  if (!token) {
+    return res.status(401).json({ error: "Token no proporcionado" });
+  }
+
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload;
+    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as unknown as JwtPayload;
     req.userId = payload.userId;
     req.tenantId = payload.tenantId;
     next();

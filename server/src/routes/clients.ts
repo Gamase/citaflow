@@ -9,7 +9,7 @@ router.use(verificarToken);
 
 router.get("/", async (req, res) => {
   const clients = await prisma.client.findMany({
-    where: { tenantId: req.tenantId },
+    where: { tenantId: req.tenantId as string },
   });
   res.json(clients);
 });
@@ -36,7 +36,7 @@ router.post("/", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const client = await prisma.client.findFirst({
-    where: { id: req.params.id, tenantId: req.tenantId },
+    where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
   if (!client) {

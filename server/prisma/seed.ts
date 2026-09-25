@@ -41,11 +41,18 @@ async function main() {
     include: { services: true, clients: true },
   });
 
+  const [servicioCorte, servicioBarba, servicioComboBarberia] = barberia.services;
+  const [clientePedro, clienteLuis, clienteMarco] = barberia.clients;
+
+  if (!servicioCorte || !servicioBarba || !servicioComboBarberia || !clientePedro || !clienteLuis || !clienteMarco) {
+    throw new Error("Faltaron datos al sembrar Barbería El Corte");
+  }
+
   await prisma.appointment.create({
     data: {
       tenantId: barberia.id,
-      clientId: barberia.clients[0].id,
-      serviceId: barberia.services[0].id,
+      clientId: clientePedro.id,
+      serviceId: servicioCorte.id,
       fechaHora: new Date("2026-10-01T10:00:00.000Z"),
       estado: "PENDIENTE",
     },
@@ -54,8 +61,8 @@ async function main() {
   await prisma.appointment.create({
     data: {
       tenantId: barberia.id,
-      clientId: barberia.clients[1].id,
-      serviceId: barberia.services[2].id,
+      clientId: clienteLuis.id,
+      serviceId: servicioComboBarberia.id,
       fechaHora: new Date("2026-10-01T14:00:00.000Z"),
       estado: "CONFIRMADA",
     },
@@ -64,8 +71,8 @@ async function main() {
   await prisma.appointment.create({
     data: {
       tenantId: barberia.id,
-      clientId: barberia.clients[2].id,
-      serviceId: barberia.services[1].id,
+      clientId: clienteMarco.id,
+      serviceId: servicioBarba.id,
       fechaHora: new Date("2026-09-20T09:00:00.000Z"),
       estado: "CANCELADA",
     },
@@ -99,11 +106,18 @@ async function main() {
     include: { services: true, clients: true },
   });
 
+  const [servicioMasaje] = spa.services;
+  const [clienteAna] = spa.clients;
+
+  if (!servicioMasaje || !clienteAna) {
+    throw new Error("Faltaron datos al sembrar Spa Relax");
+  }
+
   await prisma.appointment.create({
     data: {
       tenantId: spa.id,
-      clientId: spa.clients[0].id,
-      serviceId: spa.services[0].id,
+      clientId: clienteAna.id,
+      serviceId: servicioMasaje.id,
       fechaHora: new Date("2026-10-02T11:00:00.000Z"),
       estado: "PENDIENTE",
     },

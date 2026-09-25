@@ -27,6 +27,10 @@ router.post("/register", async (req, res) => {
 
   const user = tenant.users[0];
 
+  if (!user) {
+    return res.status(500).json({ error: "No se pudo crear el usuario" });
+  }
+
   const token = jwt.sign(
     { userId: user.id, tenantId: tenant.id },
     process.env.JWT_SECRET as string,
