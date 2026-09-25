@@ -7,8 +7,71 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum EstadoCita {
+  PENDIENTE
+  CONFIRMADA
+  CANCELADA
+  COMPLETADA
+}
+
 model Tenant {
   id       String   @id @default(uuid())
   nombre   String
   creadoEn DateTime @default(now())
+
+  users        User[]
+  services     Service[]
+  clients      Client[]
+  appointments Appointment[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  nombre    String
+  creadoEn  DateTime @default(now())
+
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  nombre      String
+  duracionMin Int
+  precio      Decimal
+  creadoEn    DateTime @default(now())
+
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  nombre    String
+  telefono  String
+  email     String?
+  creadoEn  DateTime @default(now())
+
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
+}
+
+model Appointment {
+  id        String     @id @default(uuid())
+  fechaHora DateTime
+  estado    EstadoCita @default(PENDIENTE)
+  creadoEn  DateTime   @default(now())
+
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+
+  serviceId String
+  service   Service  @relation(fields: [serviceId], references: [id])
 }
