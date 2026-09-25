@@ -15,6 +15,11 @@ export default function Services() {
   const [precio, setPrecio] = useState("");
   const [error, setError] = useState("");
 
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editNombre, setEditNombre] = useState("");
+  const [editDuracion, setEditDuracion] = useState("");
+  const [editPrecio, setEditPrecio] = useState("");
+
   function load() {
     api.get("/services").then((res) => setServices(res.data));
   }
@@ -46,6 +51,33 @@ export default function Services() {
       load();
     } catch (err: any) {
       setError(err.response?.data?.error ?? "No se pudo eliminar el servicio.");
+    }
+  }
+
+  function startEdit(s: Service) {
+    setEditId(s.id);
+    setEditNombre(s.nombre);
+    setEditDuracion(String(s.duracionMin));
+    setEditPrecio(s.precio);
+    setError("");
+  }
+
+  function cancelEdit() {
+    setEditId(null);
+  }
+
+  async function saveEdit(id: string) {
+    setError("");
+    try {
+      await api.patch(`/services/${id}`, {
+        nombre: editNombre,
+        duracionMin: Number(editDuracion),
+        precio: Number(editPrecio),
+      });
+      setEditId(null);
+      load();
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? "No se pudo guardar el cambio.");
     }
   }
 
@@ -91,25 +123,68 @@ export default function Services() {
       {!error && <div className="mb-6" />}
 
       <div className="space-y-2">
-        {services.map((s) => (
-          <div
-            key={s.id}
-            className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-          >
-            <span className="font-medium text-[var(--color-ink)]">{s.nombre}</span>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-500">
-                {s.duracionMin} min · ${s.precio}
-              </span>
+        {services.map((s) =>
+          editId === s.id ? (
+            <div
+              key={s.id}
+              className="flex items-center gap-3 overflow-hidden rounded-lg border border-[var(--color-teal)] bg-[var(--color-surface)] px-4 py-3"
+            >
+              <input
+                className="h-9 min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-2 text-sm"
+                value={editNombre}
+                onChange={(e) => setEditNombre(e.target.value)}
+              />
+              <input
+                className="h-9 w-20 shrink-0 rounded-md border border-[var(--color-border)] px-2 text-sm"
+                type="number"
+                value={editDuracion}
+                onChange={(e) => setEditDuracion(e.target.value)}
+              />
+              <input
+                className="h-9 w-20 shrink-0 rounded-md border border-[var(--color-border)] px-2 text-sm"
+                type="number"
+                value={editPrecio}
+                onChange={(e) => setEditPrecio(e.target.value)}
+              />
               <button
-                onClick={() => handleDelete(s.id)}
-                className="text-sm text-red-500 hover:text-red-700"
+                onClick={() => saveEdit(s.id)}
+                className="shrink-0 text-sm font-medium text-[var(--color-teal)] hover:text-[var(--color-teal-dark)]"
               >
-                Eliminar
+                Guardar
+              </button>
+              <button
+                onClick={cancelEdit}
+                className="shrink-0 text-sm text-gray-500 hover:text-gray-700"
+              >
+                Cancelar
               </button>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div
+              key={s.id}
+              className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+            >
+              <span className="font-medium text-[var(--color-ink)]">{s.nombre}</span>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-500">
+                  {s.duracionMin} min · ${s.precio}
+                </span>
+                <button
+                  onClick={() => startEdit(s)}
+                  className="text-sm text-[var(--color-teal)] hover:text-[var(--color-teal-dark)]"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleDelete(s.id)}
+                  className="text-sm text-red-500 hover:text-red-700"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          )
+        )}
         {services.length === 0 && (
           <p className="text-sm text-gray-500">Todavía no tienes servicios.</p>
         )}

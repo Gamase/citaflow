@@ -41,6 +41,37 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.patch("/:id", async (req, res) => {
+  const { nombre, duracionMin, precio } = req.body;
+
+  const service = await prisma.service.findFirst({
+    where: { id: req.params.id, tenantId: req.tenantId },
+  });
+
+  if (!service) {
+    return res.status(404).json({ error: "Servicio no encontrado" });
+  }
+
+  const duplicado = await prisma.service.findFirst({
+    where: {
+      tenantId: req.tenantId,
+      nombre: { equals: nombre.trim(), mode: "insensitive" },
+      NOT: { id: service.id },
+    },
+  });
+
+  if (duplicado) {
+    return res.status(409).json({ error: "Ya existe un servicio con ese nombre" });
+  }
+
+  const actualizado = await prisma.service.update({
+    where: { id: service.id },
+    data: { nombre: nombre.trim(), duracionMin, precio },
+  });
+
+  res.json(actualizado);
+});
+
 router.delete("/:id", async (req, res) => {
   const service = await prisma.service.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId },
