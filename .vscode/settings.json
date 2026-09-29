@@ -1,0 +1,15 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "files.associations": {
+    "*.prisma": "prisma"
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["className\\s*=\\s*\"([^\"]*)\"", "([a-zA-Z0-9\\-:./%]+)"]
+  ],
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "package.json": "package-lock.json, .env*, tsconfig*.json",
+    "*.prisma": "migrations"
+  }
+}
