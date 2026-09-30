@@ -51,4 +51,6 @@ jobs:
 
       - name: Build
         working-directory: client
+        env:
+          VITE_API_URL: https://ci.invalid
         run: npm run build
