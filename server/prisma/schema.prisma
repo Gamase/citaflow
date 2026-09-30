@@ -12,6 +12,7 @@ enum EstadoCita {
   CONFIRMADA
   CANCELADA
   COMPLETADA
+  NO_ASISTIO
 }
 
 model Tenant {

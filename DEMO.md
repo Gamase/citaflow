@@ -43,6 +43,8 @@ Mostrar en VS Code: `server/` (routes, middleware, prisma), `client/` (pages, ap
 ### 1.2 Base de datos desde cero (2 min)
 
 ```bash
+newgrp docker   # activa el grupo docker en esta terminal (sin sudo)
+docker ps       # confirmar que Docker responde
 docker compose down -v
 docker compose up -d
 cd server

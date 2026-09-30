@@ -1,4 +1,4 @@
-type Variant = "primary" | "secondary" | "danger" | "ghost" | "link" | "link-danger";
+type Variant = "primary" | "secondary" | "danger" | "ghost" | "link" | "link-muted" | "link-danger";
 type Size = "sm" | "md";
 
 const variants: Record<Variant, string> = {
@@ -7,6 +7,7 @@ const variants: Record<Variant, string> = {
   danger: "bg-danger text-white shadow-card hover:bg-danger-hover",
   ghost: "text-muted hover:bg-subtle hover:text-fg",
   link: "text-teal-700 hover:text-teal-800 hover:underline",
+  "link-muted": "text-muted hover:text-fg hover:underline",
   "link-danger": "text-danger hover:text-danger-hover hover:underline",
 };
 
@@ -27,7 +28,7 @@ export default function Button({
   type = "button",
   ...props
 }: ButtonProps) {
-  const isLink = variant === "link" || variant === "link-danger";
+  const isLink = variant.startsWith("link");
   return (
     <button
       type={type}
