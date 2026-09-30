@@ -3,7 +3,117 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+interface Dataset {
+  tenants: {
+    nombre: string;
+    email: string;
+    password: string;
+    nombreUsuario: string;
+    servicios: { nombre: string; duracionMin: number; precio: number }[];
+    clientes: { nombre: string; telefono: string }[];
+  }[];
+}
+
+const DATASETS: Record<string, Dataset> = {
+  dev: {
+    tenants: [
+      {
+        nombre: "Taller El Tornillo",
+        email: "admin@tornillo.dev",
+        password: "123456",
+        nombreUsuario: "Dev Tester",
+        servicios: [
+          { nombre: "Afinación básica", duracionMin: 30, precio: 150 },
+          { nombre: "Cambio de aceite", duracionMin: 20, precio: 100 },
+        ],
+        clientes: [
+          { nombre: "Cliente Prueba Uno", telefono: "6640000001" },
+          { nombre: "Cliente Prueba Dos", telefono: "6640000002" },
+        ],
+      },
+      {
+        nombre: "Consultorio Dr. Prueba",
+        email: "admin@drprueba.dev",
+        password: "123456",
+        nombreUsuario: "Dev Tester 2",
+        servicios: [{ nombre: "Consulta general", duracionMin: 30, precio: 200 }],
+        clientes: [{ nombre: "Paciente Prueba", telefono: "6640000003" }],
+      },
+    ],
+  },
+  staging: {
+    tenants: [
+      {
+        nombre: "Salón Bella Vista",
+        email: "admin@bellavista.test",
+        password: "123456",
+        nombreUsuario: "Staging Tester",
+        servicios: [
+          { nombre: "Corte de dama", duracionMin: 45, precio: 250 },
+          { nombre: "Manicure", duracionMin: 30, precio: 180 },
+        ],
+        clientes: [
+          { nombre: "Laura Staging", telefono: "6641110001" },
+          { nombre: "Carlos Staging", telefono: "6641110002" },
+        ],
+      },
+      {
+        nombre: "MotorPro Servicio",
+        email: "admin@motorpro.test",
+        password: "123456",
+        nombreUsuario: "Staging Tester 2",
+        servicios: [{ nombre: "Diagnóstico", duracionMin: 40, precio: 300 }],
+        clientes: [{ nombre: "Cliente MotorPro", telefono: "6641110003" }],
+      },
+    ],
+  },
+  prod: {
+    tenants: [
+      {
+        nombre: "Barbería El Corte",
+        email: "admin@barberia.com",
+        password: "123456",
+        nombreUsuario: "Juan Pérez",
+        servicios: [
+          { nombre: "Corte de cabello", duracionMin: 30, precio: 150 },
+          { nombre: "Arreglo de barba", duracionMin: 20, precio: 100 },
+          { nombre: "Corte + barba", duracionMin: 45, precio: 220 },
+        ],
+        clientes: [
+          { nombre: "Pedro Pérez", telefono: "6641234567" },
+          { nombre: "Luis Gómez", telefono: "6641234568" },
+          { nombre: "Marco Sánchez", telefono: "6641234569" },
+        ],
+      },
+      {
+        nombre: "Spa Relax",
+        email: "admin@sparelax.com",
+        password: "654321",
+        nombreUsuario: "María López",
+        servicios: [
+          { nombre: "Masaje relajante", duracionMin: 60, precio: 500 },
+          { nombre: "Facial hidratante", duracionMin: 45, precio: 400 },
+        ],
+        clientes: [
+          { nombre: "Ana Torres", telefono: "6647654321" },
+          { nombre: "Sofía Ramírez", telefono: "6647654322" },
+        ],
+      },
+    ],
+  },
+};
+
 async function main() {
+  const label = process.env.SEED_LABEL || "dev";
+  const dataset = DATASETS[label];
+
+  if (!dataset) {
+    throw new Error(
+      `SEED_LABEL="${label}" no reconocido. Usa uno de: ${Object.keys(DATASETS).join(", ")}`
+    );
+  }
+
+  console.log(`Sembrando dataset "${label}"...`);
   console.log("Limpiando base de datos...");
   await prisma.appointment.deleteMany();
   await prisma.client.deleteMany();
@@ -11,121 +121,46 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.tenant.deleteMany();
 
-  console.log("Sembrando Barbería El Corte...");
-  const passwordBarberia = await bcrypt.hash("123456", 10);
-  const barberia = await prisma.tenant.create({
-    data: {
-      nombre: "Barbería El Corte",
-      users: {
-        create: {
-          email: "admin@barberia.com",
-          password: passwordBarberia,
-          nombre: "Juan Pérez",
+  for (const t of dataset.tenants) {
+    console.log(`Sembrando ${t.nombre}...`);
+    const hashedPassword = await bcrypt.hash(t.password, 10);
+
+    const tenant = await prisma.tenant.create({
+      data: {
+        nombre: t.nombre,
+        users: {
+          create: {
+            email: t.email,
+            password: hashedPassword,
+            nombre: t.nombreUsuario,
+          },
         },
+        services: { create: t.servicios },
+        clients: { create: t.clientes },
       },
-      services: {
-        create: [
-          { nombre: "Corte de cabello", duracionMin: 30, precio: 150 },
-          { nombre: "Arreglo de barba", duracionMin: 20, precio: 100 },
-          { nombre: "Corte + barba", duracionMin: 45, precio: 220 },
-        ],
-      },
-      clients: {
-        create: [
-          { nombre: "Pedro Pérez", telefono: "6641234567" },
-          { nombre: "Luis Gómez", telefono: "6641234568" },
-          { nombre: "Marco Sánchez", telefono: "6641234569" },
-        ],
-      },
-    },
-    include: { services: true, clients: true },
-  });
+      include: { services: true, clients: true },
+    });
 
-  const [servicioCorte, servicioBarba, servicioComboBarberia] = barberia.services;
-  const [clientePedro, clienteLuis, clienteMarco] = barberia.clients;
+    const [primerServicio] = tenant.services;
+    const [primerCliente] = tenant.clients;
 
-  if (!servicioCorte || !servicioBarba || !servicioComboBarberia || !clientePedro || !clienteLuis || !clienteMarco) {
-    throw new Error("Faltaron datos al sembrar Barbería El Corte");
+    if (primerServicio && primerCliente) {
+      await prisma.appointment.create({
+        data: {
+          tenantId: tenant.id,
+          clientId: primerCliente.id,
+          serviceId: primerServicio.id,
+          fechaHora: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          estado: "PENDIENTE",
+        },
+      });
+    }
   }
 
-  await prisma.appointment.create({
-    data: {
-      tenantId: barberia.id,
-      clientId: clientePedro.id,
-      serviceId: servicioCorte.id,
-      fechaHora: new Date("2026-10-01T10:00:00.000Z"),
-      estado: "PENDIENTE",
-    },
-  });
-
-  await prisma.appointment.create({
-    data: {
-      tenantId: barberia.id,
-      clientId: clienteLuis.id,
-      serviceId: servicioComboBarberia.id,
-      fechaHora: new Date("2026-10-01T14:00:00.000Z"),
-      estado: "CONFIRMADA",
-    },
-  });
-
-  await prisma.appointment.create({
-    data: {
-      tenantId: barberia.id,
-      clientId: clienteMarco.id,
-      serviceId: servicioBarba.id,
-      fechaHora: new Date("2026-09-20T09:00:00.000Z"),
-      estado: "CANCELADA",
-    },
-  });
-
-  console.log("Sembrando Spa Relax...");
-  const passwordSpa = await bcrypt.hash("654321", 10);
-  const spa = await prisma.tenant.create({
-    data: {
-      nombre: "Spa Relax",
-      users: {
-        create: {
-          email: "admin@sparelax.com",
-          password: passwordSpa,
-          nombre: "María López",
-        },
-      },
-      services: {
-        create: [
-          { nombre: "Masaje relajante", duracionMin: 60, precio: 500 },
-          { nombre: "Facial hidratante", duracionMin: 45, precio: 400 },
-        ],
-      },
-      clients: {
-        create: [
-          { nombre: "Ana Torres", telefono: "6647654321" },
-          { nombre: "Sofía Ramírez", telefono: "6647654322" },
-        ],
-      },
-    },
-    include: { services: true, clients: true },
-  });
-
-  const [servicioMasaje] = spa.services;
-  const [clienteAna] = spa.clients;
-
-  if (!servicioMasaje || !clienteAna) {
-    throw new Error("Faltaron datos al sembrar Spa Relax");
+  console.log(`Listo. Dataset "${label}" sembrado:`);
+  for (const t of dataset.tenants) {
+    console.log(`  - ${t.nombre}: ${t.email} / ${t.password}`);
   }
-
-  await prisma.appointment.create({
-    data: {
-      tenantId: spa.id,
-      clientId: clienteAna.id,
-      serviceId: servicioMasaje.id,
-      fechaHora: new Date("2026-10-02T11:00:00.000Z"),
-      estado: "PENDIENTE",
-    },
-  });
-
-  console.log("Listo. Dos negocios sembrados:");
-  console.log("  - Barbería El Corte: admin@barberia.com / 123456");
-  console.log("  - Spa Relax: admin@sparelax.com / 654321");
 }
 
 main()
