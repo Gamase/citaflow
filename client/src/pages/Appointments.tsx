@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/client";
+import Badge, { type BadgeTone } from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
+import { Field, Input, Select } from "../components/ui/Field";
+import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
+import PageHeader from "../components/ui/PageHeader";
+import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
+import { apiError, useToast } from "../components/ui/useToast";
+import { formatFecha, formatHora } from "../lib/format";
 
 interface Client {
   id: string;
@@ -19,17 +29,30 @@ interface Appointment {
   service: Service;
 }
 
+// Presentación de cada valor del enum EstadoCita
+const estados: Record<string, { label: string; tone: BadgeTone }> = {
+  PENDIENTE: { label: "Pendiente", tone: "amber" },
+  CONFIRMADA: { label: "Confirmada", tone: "teal" },
+  COMPLETADA: { label: "Completada", tone: "ink" },
+  CANCELADA: { label: "Cancelada", tone: "neutral" },
+};
+
 export default function Appointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [mostrarForm, setMostrarForm] = useState(false);
   const [clientId, setClientId] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [fechaHora, setFechaHora] = useState("");
-  const [error, setError] = useState("");
+  const toast = useToast();
 
   function load() {
-    api.get("/appointments").then((res) => setAppointments(res.data));
+    api
+      .get("/appointments")
+      .then((res) => setAppointments(res.data))
+      .finally(() => setCargando(false));
     api.get("/clients").then((res) => setClients(res.data));
     api.get("/services").then((res) => setServices(res.data));
   }
@@ -38,7 +61,6 @@ export default function Appointments() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     try {
       await api.post("/appointments", {
         clientId,
@@ -48,113 +70,159 @@ export default function Appointments() {
       setClientId("");
       setServiceId("");
       setFechaHora("");
+      setMostrarForm(false);
+      toast.success("Cita agendada.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo agendar la cita.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo agendar la cita."));
     }
   }
 
   async function handleCancelar(id: string) {
-    setError("");
     try {
       await api.patch(`/appointments/${id}/cancelar`);
+      toast.success("Cita cancelada. El horario quedó libre.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo cancelar la cita.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo cancelar la cita."));
     }
   }
 
-  const estadoColor: Record<string, string> = {
-    PENDIENTE: "bg-[var(--color-amber)]",
-    CONFIRMADA: "bg-[var(--color-teal)]",
-    CANCELADA: "bg-gray-400",
-    COMPLETADA: "bg-gray-600",
-  };
+  const faltanDatos = clients.length === 0 || services.length === 0;
+
+  const botonNuevo = (
+    <Button onClick={() => setMostrarForm(true)}>
+      <PlusIcon />
+      Agendar cita
+    </Button>
+  );
 
   return (
-    <div className="max-w-3xl">
-      <h2 className="mb-6 font-[var(--font-display)] text-3xl font-semibold text-[var(--color-ink)]">
-        Citas
-      </h2>
+    <>
+      <PageHeader
+        title="Citas"
+        description="La agenda de tu negocio. No se permiten citas que choquen con la duración de otra."
+        action={!mostrarForm && botonNuevo}
+      />
 
-      <form
-        onSubmit={handleSubmit}
-        className="mb-2 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
-      >
-        <select
-          className="h-10 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          required
-        >
-          <option value="">Cliente</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nombre}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-10 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          value={serviceId}
-          onChange={(e) => setServiceId(e.target.value)}
-          required
-        >
-          <option value="">Servicio</option>
-          {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nombre}
-            </option>
-          ))}
-        </select>
-        <input
-          className="h-10 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          type="datetime-local"
-          value={fechaHora}
-          onChange={(e) => setFechaHora(e.target.value)}
-          required
-        />
-        <button className="h-10 shrink-0 whitespace-nowrap rounded-md bg-[var(--color-teal)] px-4 text-sm font-medium text-white">
-          Agendar
-        </button>
-      </form>
-
-      {error && <p className="mb-6 text-sm text-red-600">{error}</p>}
-      {!error && <div className="mb-6" />}
-
-      <div className="space-y-2">
-        {appointments.map((a) => (
-          <div
-            key={a.id}
-            className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-          >
-            <div>
-              <p className="font-medium text-[var(--color-ink)]">{a.client.nombre}</p>
-              <p className="text-sm text-gray-500">
-                {a.service.nombre} · {new Date(a.fechaHora).toLocaleString("es-MX")}
+      {mostrarForm && (
+        <Card className="mb-6">
+          <form onSubmit={handleSubmit} className="p-5">
+            <h2 className="mb-4 text-sm font-semibold text-fg">Agendar cita</h2>
+            {faltanDatos && (
+              <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Para agendar necesitas al menos un{" "}
+                <Link to="/dashboard/clients" className="font-medium underline">
+                  cliente
+                </Link>{" "}
+                y un{" "}
+                <Link to="/dashboard/services" className="font-medium underline">
+                  servicio
+                </Link>
+                .
               </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Cliente">
+                {(id) => (
+                  <Select id={id} value={clientId} onChange={(e) => setClientId(e.target.value)} required>
+                    <option value="">Selecciona un cliente</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Servicio">
+                {(id) => (
+                  <Select id={id} value={serviceId} onChange={(e) => setServiceId(e.target.value)} required>
+                    <option value="">Selecciona un servicio</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Fecha y hora">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="datetime-local"
+                    value={fechaHora}
+                    onChange={(e) => setFechaHora(e.target.value)}
+                    required
+                  />
+                )}
+              </Field>
             </div>
-            <div className="flex items-center gap-4">
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-medium text-white ${estadoColor[a.estado]}`}
-              >
-                {a.estado}
-              </span>
-              {a.estado !== "CANCELADA" && (
-                <button
-                  onClick={() => handleCancelar(a.id)}
-                  className="text-sm text-red-500 hover:text-red-700"
-                >
-                  Cancelar
-                </button>
-              )}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setMostrarForm(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Agendar</Button>
             </div>
-          </div>
-        ))}
-        {appointments.length === 0 && (
-          <p className="text-sm text-gray-500">Todavía no tienes citas agendadas.</p>
+          </form>
+        </Card>
+      )}
+
+      <Card>
+        {cargando ? (
+          <p className="px-4 py-14 text-center text-sm text-muted">Cargando citas…</p>
+        ) : appointments.length === 0 ? (
+          <EmptyState
+            icon={<CalendarIcon className="size-5" />}
+            title="Aún no hay citas"
+            description="Agenda la primera eligiendo un cliente, un servicio y un horario."
+            action={!mostrarForm && botonNuevo}
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Cliente</Th>
+                <Th>Servicio</Th>
+                <Th className="w-44">Fecha</Th>
+                <Th className="w-36">Estado</Th>
+                <Th align="right" className="w-28">
+                  <span className="sr-only">Acciones</span>
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {appointments.map((a) => {
+                const estado = estados[a.estado] ?? { label: a.estado, tone: "neutral" as const };
+                const cancelada = a.estado === "CANCELADA";
+                return (
+                  <Tr key={a.id} className={cancelada ? "text-faint" : ""}>
+                    <Td className={`font-medium ${cancelada ? "text-muted line-through" : "text-fg"}`}>
+                      {a.client.nombre}
+                    </Td>
+                    <Td className={cancelada ? "text-faint" : "text-muted"}>{a.service.nombre}</Td>
+                    <Td className="tabular-nums">
+                      <span className={cancelada ? "text-faint" : "text-fg"}>{formatFecha(a.fechaHora)}</span>
+                      <span className="ml-2 text-muted">{formatHora(a.fechaHora)}</span>
+                    </Td>
+                    <Td>
+                      <Badge tone={estado.tone}>{estado.label}</Badge>
+                    </Td>
+                    <Td align="right">
+                      {!cancelada && (
+                        <Button variant="link-danger" onClick={() => handleCancelar(a.id)}>
+                          Cancelar
+                        </Button>
+                      )}
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </tbody>
+          </Table>
         )}
-      </div>
-    </div>
+      </Card>
+    </>
   );
 }

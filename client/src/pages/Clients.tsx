@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
+import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
+import { Field, Input } from "../components/ui/Field";
+import { PlusIcon, UsersIcon } from "../components/ui/Icons";
+import PageHeader from "../components/ui/PageHeader";
+import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
+import { apiError, useToast } from "../components/ui/useToast";
+import { formatTelefono } from "../lib/format";
 
 interface Client {
   id: string;
@@ -10,23 +18,27 @@ interface Client {
 
 export default function Clients() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [mostrarForm, setMostrarForm] = useState(false);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
+  const toast = useToast();
 
   function load() {
-    api.get("/clients").then((res) => setClients(res.data));
+    api
+      .get("/clients")
+      .then((res) => setClients(res.data))
+      .finally(() => setCargando(false));
   }
 
   useEffect(load, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
 
     if (!/^\d{10}$/.test(telefono)) {
-      setError("El teléfono debe tener 10 dígitos.");
+      toast.error("El teléfono debe tener 10 dígitos.");
       return;
     }
 
@@ -35,82 +47,131 @@ export default function Clients() {
       setNombre("");
       setTelefono("");
       setEmail("");
+      setMostrarForm(false);
+      toast.success("Cliente agregado.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo agregar el cliente.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo agregar el cliente."));
     }
   }
 
   async function handleDelete(id: string) {
-    setError("");
     try {
       await api.delete(`/clients/${id}`);
+      toast.success("Cliente eliminado.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo eliminar el cliente.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo eliminar el cliente."));
     }
   }
 
+  const botonNuevo = (
+    <Button onClick={() => setMostrarForm(true)}>
+      <PlusIcon />
+      Nuevo cliente
+    </Button>
+  );
+
   return (
-    <div className="max-w-2xl">
-      <h2 className="mb-6 font-[var(--font-display)] text-3xl font-semibold text-[var(--color-ink)]">
-        Clientes
-      </h2>
+    <>
+      <PageHeader
+        title="Clientes"
+        description="Las personas que atiende tu negocio. El teléfono identifica a cada cliente."
+        action={!mostrarForm && botonNuevo}
+      />
 
-      <form
-        onSubmit={handleSubmit}
-        className="mb-2 flex items-center gap-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
-      >
-        <input
-          className="h-10 min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Nombre"
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-          required
-        />
-        <input
-          className="h-10 w-40 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Teléfono (10 dígitos)"
-          value={telefono}
-          onChange={(e) => setTelefono(e.target.value)}
-          required
-        />
-        <input
-          className="h-10 w-48 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Email (opcional)"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <button className="h-10 shrink-0 whitespace-nowrap rounded-md bg-[var(--color-teal)] px-4 text-sm font-medium text-white">
-          Agregar
-        </button>
-      </form>
-
-      {error && <p className="mb-6 text-sm text-red-600">{error}</p>}
-      {!error && <div className="mb-6" />}
-
-      <div className="space-y-2">
-        {clients.map((c) => (
-          <div
-            key={c.id}
-            className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-          >
-            <span className="font-medium text-[var(--color-ink)]">{c.nombre}</span>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-500">{c.telefono}</span>
-              <button
-                onClick={() => handleDelete(c.id)}
-                className="text-sm text-red-500 hover:text-red-700"
-              >
-                Eliminar
-              </button>
+      {mostrarForm && (
+        <Card className="mb-6">
+          <form onSubmit={handleSubmit} className="p-5">
+            <h2 className="mb-4 text-sm font-semibold text-fg">Nuevo cliente</h2>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Nombre">
+                {(id) => (
+                  <Input
+                    id={id}
+                    autoComplete="off"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                )}
+              </Field>
+              <Field label="Teléfono" hint="10 dígitos, sin espacios.">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="5512345678"
+                    value={telefono}
+                    onChange={(e) => setTelefono(e.target.value)}
+                    required
+                  />
+                )}
+              </Field>
+              <Field label="Email" hint="Opcional.">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="email"
+                    autoComplete="off"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                )}
+              </Field>
             </div>
-          </div>
-        ))}
-        {clients.length === 0 && (
-          <p className="text-sm text-gray-500">Todavía no tienes clientes.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setMostrarForm(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Guardar cliente</Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      <Card>
+        {cargando ? (
+          <p className="px-4 py-14 text-center text-sm text-muted">Cargando clientes…</p>
+        ) : clients.length === 0 ? (
+          <EmptyState
+            icon={<UsersIcon className="size-5" />}
+            title="Aún no hay clientes"
+            description="Agrega el primero para poder agendarle citas."
+            action={!mostrarForm && botonNuevo}
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Nombre</Th>
+                <Th className="w-40">Teléfono</Th>
+                <Th>Email</Th>
+                <Th align="right" className="w-28">
+                  <span className="sr-only">Acciones</span>
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((c) => (
+                <Tr key={c.id}>
+                  <Td className="font-medium text-fg">{c.nombre}</Td>
+                  <Td className="text-muted tabular-nums">{formatTelefono(c.telefono)}</Td>
+                  <Td className="text-muted">{c.email ?? <span className="text-faint">—</span>}</Td>
+                  <Td align="right">
+                    <Button variant="link-danger" onClick={() => handleDelete(c.id)}>
+                      Eliminar
+                    </Button>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
         )}
-      </div>
-    </div>
+      </Card>
+    </>
   );
 }

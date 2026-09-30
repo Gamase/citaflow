@@ -1,21 +1,72 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
+/*
+ * Tokens de diseño de CitaFlow. Es la única fuente de colores, radios y sombras:
+ * los componentes usan estas clases (bg-surface, text-muted, border-line…),
+ * nunca hex sueltos. La paleta por defecto de Tailwind se desactiva a propósito.
+ */
 @theme {
-  --font-display: "Fraunces", serif;
-  --font-sans: "Inter", sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-ink: #1c2b33;
-  --color-ink-light: #2a3d47;
-  --color-teal: #2f6f63;
-  --color-teal-dark: #234f46;
-  --color-amber: #d98e3b;
-  --color-bg: #f6f5f1;
-  --color-surface: #ffffff;
-  --color-border: #e3e1da;
+  --color-*: initial;
+  --color-white: #ffffff;
+
+  /* Marca */
+  --color-ink-950: #081B27;
+  --color-ink-900: #0E2A3B; /* ink de marca: sidebar, texto principal */
+  --color-ink-800: #163A50;
+  --color-ink-700: #24506A;
+  --color-ink-300: #9FB3C0;
+
+  --color-teal-500: #12A594; /* teal de marca: acentos, foco, estado activo */
+  --color-teal-700: #0B7A6E; /* botón primario (texto blanco 5.2:1) */
+  --color-teal-800: #096459;
+  --color-teal-50: #E7F6F3;
+
+  --color-amber-500: #F5A524; /* amber de marca */
+  --color-amber-800: #8A5A00;
+  --color-amber-50: #FEF4E2;
+
+  /* Neutros semánticos */
+  --color-canvas: #F6F7F9;
+  --color-surface: #FFFFFF;
+  --color-subtle: #EEF1F4;
+  --color-line: #E3E7EC;
+  --color-line-strong: #CFD6DD;
+  --color-fg: #0E2A3B;
+  --color-muted: #5B6B78;
+  --color-faint: #8795A1;
+  --color-neutral-700: #44525E;
+
+  /* Estados */
+  --color-danger: #C4321F;
+  --color-danger-hover: #A32817;
+  --color-danger-50: #FDEEEC;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-card: 0 1px 2px rgb(14 42 59 / 0.06);
+  --shadow-pop: 0 8px 24px rgb(14 42 59 / 0.14), 0 2px 6px rgb(14 42 59 / 0.08);
 }
 
-body {
-  font-family: var(--font-sans);
-  background-color: var(--color-bg);
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Foco visible solo con teclado, igual en todo el producto */
+  :focus-visible {
+    outline: 2px solid var(--color-teal-500);
+    outline-offset: 2px;
+  }
 }

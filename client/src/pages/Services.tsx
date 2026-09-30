@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
+import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
+import { Field, Input } from "../components/ui/Field";
+import { PlusIcon, TagIcon } from "../components/ui/Icons";
+import PageHeader from "../components/ui/PageHeader";
+import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
+import { apiError, useToast } from "../components/ui/useToast";
+import { formatPrecio } from "../lib/format";
 
 interface Service {
   id: string;
@@ -10,10 +18,12 @@ interface Service {
 
 export default function Services() {
   const [services, setServices] = useState<Service[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [mostrarForm, setMostrarForm] = useState(false);
   const [nombre, setNombre] = useState("");
   const [duracionMin, setDuracionMin] = useState("");
   const [precio, setPrecio] = useState("");
-  const [error, setError] = useState("");
+  const toast = useToast();
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editNombre, setEditNombre] = useState("");
@@ -21,14 +31,16 @@ export default function Services() {
   const [editPrecio, setEditPrecio] = useState("");
 
   function load() {
-    api.get("/services").then((res) => setServices(res.data));
+    api
+      .get("/services")
+      .then((res) => setServices(res.data))
+      .finally(() => setCargando(false));
   }
 
   useEffect(load, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     try {
       await api.post("/services", {
         nombre,
@@ -38,19 +50,21 @@ export default function Services() {
       setNombre("");
       setDuracionMin("");
       setPrecio("");
+      setMostrarForm(false);
+      toast.success("Servicio agregado.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo agregar el servicio.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo agregar el servicio."));
     }
   }
 
   async function handleDelete(id: string) {
-    setError("");
     try {
       await api.delete(`/services/${id}`);
+      toast.success("Servicio eliminado.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo eliminar el servicio.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo eliminar el servicio."));
     }
   }
 
@@ -59,7 +73,6 @@ export default function Services() {
     setEditNombre(s.nombre);
     setEditDuracion(String(s.duracionMin));
     setEditPrecio(s.precio);
-    setError("");
   }
 
   function cancelEdit() {
@@ -67,7 +80,6 @@ export default function Services() {
   }
 
   async function saveEdit(id: string) {
-    setError("");
     try {
       await api.patch(`/services/${id}`, {
         nombre: editNombre,
@@ -75,120 +87,173 @@ export default function Services() {
         precio: Number(editPrecio),
       });
       setEditId(null);
+      toast.success("Cambios guardados.");
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? "No se pudo guardar el cambio.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo guardar el cambio."));
     }
   }
 
+  const botonNuevo = (
+    <Button onClick={() => setMostrarForm(true)}>
+      <PlusIcon />
+      Nuevo servicio
+    </Button>
+  );
+
   return (
-    <div className="max-w-2xl">
-      <h2 className="mb-6 font-[var(--font-display)] text-3xl font-semibold text-[var(--color-ink)]">
-        Servicios
-      </h2>
+    <>
+      <PageHeader
+        title="Servicios"
+        description="Lo que ofrece tu negocio, con su duración y precio. La duración define cuánto bloquea cada cita."
+        action={!mostrarForm && botonNuevo}
+      />
 
-      <form
-        onSubmit={handleSubmit}
-        className="mb-2 flex items-center gap-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
-      >
-        <input
-          className="h-10 min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Nombre del servicio"
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-          required
-        />
-        <input
-          className="h-10 w-28 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Minutos"
-          type="number"
-          value={duracionMin}
-          onChange={(e) => setDuracionMin(e.target.value)}
-          required
-        />
-        <input
-          className="h-10 w-28 shrink-0 rounded-md border border-[var(--color-border)] px-3 text-sm"
-          placeholder="Precio"
-          type="number"
-          value={precio}
-          onChange={(e) => setPrecio(e.target.value)}
-          required
-        />
-        <button className="h-10 shrink-0 whitespace-nowrap rounded-md bg-[var(--color-teal)] px-4 text-sm font-medium text-white">
-          Agregar
-        </button>
-      </form>
-
-      {error && <p className="mb-6 text-sm text-red-600">{error}</p>}
-      {!error && <div className="mb-6" />}
-
-      <div className="space-y-2">
-        {services.map((s) =>
-          editId === s.id ? (
-            <div
-              key={s.id}
-              className="flex items-center gap-3 overflow-hidden rounded-lg border border-[var(--color-teal)] bg-[var(--color-surface)] px-4 py-3"
-            >
-              <input
-                className="h-9 min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-2 text-sm"
-                value={editNombre}
-                onChange={(e) => setEditNombre(e.target.value)}
-              />
-              <input
-                className="h-9 w-20 shrink-0 rounded-md border border-[var(--color-border)] px-2 text-sm"
-                type="number"
-                value={editDuracion}
-                onChange={(e) => setEditDuracion(e.target.value)}
-              />
-              <input
-                className="h-9 w-20 shrink-0 rounded-md border border-[var(--color-border)] px-2 text-sm"
-                type="number"
-                value={editPrecio}
-                onChange={(e) => setEditPrecio(e.target.value)}
-              />
-              <button
-                onClick={() => saveEdit(s.id)}
-                className="shrink-0 text-sm font-medium text-[var(--color-teal)] hover:text-[var(--color-teal-dark)]"
-              >
-                Guardar
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="shrink-0 text-sm text-gray-500 hover:text-gray-700"
-              >
+      {mostrarForm && (
+        <Card className="mb-6">
+          <form onSubmit={handleSubmit} className="p-5">
+            <h2 className="mb-4 text-sm font-semibold text-fg">Nuevo servicio</h2>
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem_9rem]">
+              <Field label="Nombre">
+                {(id) => (
+                  <Input
+                    id={id}
+                    placeholder="Corte de cabello"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                )}
+              </Field>
+              <Field label="Duración (min)">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    min={1}
+                    placeholder="30"
+                    value={duracionMin}
+                    onChange={(e) => setDuracionMin(e.target.value)}
+                    required
+                  />
+                )}
+              </Field>
+              <Field label="Precio (MXN)">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="150"
+                    value={precio}
+                    onChange={(e) => setPrecio(e.target.value)}
+                    required
+                  />
+                )}
+              </Field>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setMostrarForm(false)}>
                 Cancelar
-              </button>
+              </Button>
+              <Button type="submit">Guardar servicio</Button>
             </div>
-          ) : (
-            <div
-              key={s.id}
-              className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-            >
-              <span className="font-medium text-[var(--color-ink)]">{s.nombre}</span>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-500">
-                  {s.duracionMin} min · ${s.precio}
-                </span>
-                <button
-                  onClick={() => startEdit(s)}
-                  className="text-sm text-[var(--color-teal)] hover:text-[var(--color-teal-dark)]"
-                >
-                  Editar
-                </button>
-                <button
-                  onClick={() => handleDelete(s.id)}
-                  className="text-sm text-red-500 hover:text-red-700"
-                >
-                  Eliminar
-                </button>
-              </div>
-            </div>
-          )
+          </form>
+        </Card>
+      )}
+
+      <Card>
+        {cargando ? (
+          <p className="px-4 py-14 text-center text-sm text-muted">Cargando servicios…</p>
+        ) : services.length === 0 ? (
+          <EmptyState
+            icon={<TagIcon className="size-5" />}
+            title="Aún no hay servicios"
+            description="Agrega el primero para poder agendar citas con él."
+            action={!mostrarForm && botonNuevo}
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Nombre</Th>
+                <Th align="right" className="w-32">Duración</Th>
+                <Th align="right" className="w-36">Precio</Th>
+                <Th align="right" className="w-44">
+                  <span className="sr-only">Acciones</span>
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((s) =>
+                editId === s.id ? (
+                  <Tr key={s.id} className="bg-teal-50/50 hover:bg-teal-50/50">
+                    <Td>
+                      <Input
+                        aria-label="Nombre"
+                        className="h-9"
+                        value={editNombre}
+                        onChange={(e) => setEditNombre(e.target.value)}
+                        autoFocus
+                      />
+                    </Td>
+                    <Td align="right">
+                      <Input
+                        aria-label="Duración en minutos"
+                        className="h-9 text-right"
+                        type="number"
+                        value={editDuracion}
+                        onChange={(e) => setEditDuracion(e.target.value)}
+                      />
+                    </Td>
+                    <Td align="right">
+                      <Input
+                        aria-label="Precio"
+                        className="h-9 text-right"
+                        type="number"
+                        value={editPrecio}
+                        onChange={(e) => setEditPrecio(e.target.value)}
+                      />
+                    </Td>
+                    <Td align="right">
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="secondary" onClick={cancelEdit}>
+                          Cancelar
+                        </Button>
+                        <Button size="sm" onClick={() => saveEdit(s.id)}>
+                          Guardar
+                        </Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                ) : (
+                  <Tr key={s.id}>
+                    <Td className="font-medium text-fg">{s.nombre}</Td>
+                    <Td align="right" className="text-muted tabular-nums">
+                      {s.duracionMin} min
+                    </Td>
+                    <Td align="right" className="text-fg tabular-nums">
+                      {formatPrecio(s.precio)}
+                    </Td>
+                    <Td align="right">
+                      <div className="flex justify-end gap-4">
+                        <Button variant="link" onClick={() => startEdit(s)}>
+                          Editar
+                        </Button>
+                        <Button variant="link-danger" onClick={() => handleDelete(s.id)}>
+                          Eliminar
+                        </Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                ),
+              )}
+            </tbody>
+          </Table>
         )}
-        {services.length === 0 && (
-          <p className="text-sm text-gray-500">Todavía no tienes servicios.</p>
-        )}
-      </div>
-    </div>
+      </Card>
+    </>
   );
 }

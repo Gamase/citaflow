@@ -37,13 +37,20 @@ router.post("/register", async (req, res) => {
     { expiresIn: "7d" }
   );
 
-  res.status(201).json({ token, tenant: { id: tenant.id, nombre: tenant.nombre } });
+  res.status(201).json({
+    token,
+    tenant: { id: tenant.id, nombre: tenant.nombre },
+    user: { nombre: user.nombre, email: user.email },
+  });
 });
 
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { tenant: { select: { id: true, nombre: true } } },
+  });
 
   if (!user) {
     return res.status(401).json({ error: "Credenciales inválidas" });
@@ -61,7 +68,11 @@ router.post("/login", async (req, res) => {
     { expiresIn: "7d" }
   );
 
-  res.json({ token });
+  res.json({
+    token,
+    tenant: user.tenant,
+    user: { nombre: user.nombre, email: user.email },
+  });
 });
 
 export default router;

@@ -1,53 +1,77 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/client";
+import { saveSession } from "../lib/session";
+import AuthLayout from "../components/AuthLayout";
+import Button from "../components/ui/Button";
+import { Field, Input } from "../components/ui/Field";
+import { useToast } from "../components/ui/useToast";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
+  const toast = useToast();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setEnviando(true);
     try {
       const res = await api.post("/auth/login", { email, password });
       localStorage.setItem("token", res.data.token);
+      saveSession(res.data);
       navigate("/dashboard");
     } catch {
-      setError("Credenciales inválidas.");
+      toast.error("Credenciales inválidas.");
+    } finally {
+      setEnviando(false);
     }
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-50">
-      <form onSubmit={handleSubmit} className="w-80 space-y-3 rounded-lg bg-white p-6 shadow">
-        <h1 className="text-xl font-bold">Iniciar sesión</h1>
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="w-full rounded bg-blue-600 p-2 text-white" type="submit">
-          Entrar
-        </button>
-        <p className="text-sm">
-          ¿No tienes cuenta? <Link className="text-blue-600" to="/register">Regístrate</Link>
-        </p>
+    <AuthLayout
+      title="Inicia sesión"
+      subtitle="Entra al panel de tu negocio."
+      footer={
+        <>
+          ¿No tienes cuenta?{" "}
+          <Link className="font-medium text-teal-700 hover:underline" to="/register">
+            Registra tu negocio
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Field label="Email">
+          {(id) => (
+            <Input
+              id={id}
+              type="email"
+              autoComplete="email"
+              placeholder="tu@negocio.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Field label="Contraseña">
+          {(id) => (
+            <Input
+              id={id}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Button type="submit" className="w-full" disabled={enviando}>
+          {enviando ? "Entrando…" : "Entrar"}
+        </Button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

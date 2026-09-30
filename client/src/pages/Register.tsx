@@ -1,18 +1,24 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/client";
+import { saveSession } from "../lib/session";
+import AuthLayout from "../components/AuthLayout";
+import Button from "../components/ui/Button";
+import { Field, Input } from "../components/ui/Field";
+import { useToast } from "../components/ui/useToast";
 
 export default function Register() {
   const [nombreNegocio, setNombreNegocio] = useState("");
   const [nombreUsuario, setNombreUsuario] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
+  const toast = useToast();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setEnviando(true);
     try {
       const res = await api.post("/auth/register", {
         nombreNegocio,
@@ -21,54 +27,81 @@ export default function Register() {
         password,
       });
       localStorage.setItem("token", res.data.token);
+      saveSession(res.data);
       navigate("/dashboard");
     } catch {
-      setError("No se pudo registrar. Revisa los datos.");
+      toast.error("No se pudo registrar. Revisa los datos.");
+    } finally {
+      setEnviando(false);
     }
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-50">
-      <form onSubmit={handleSubmit} className="w-80 space-y-3 rounded-lg bg-white p-6 shadow">
-        <h1 className="text-xl font-bold">Registra tu negocio</h1>
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Nombre del negocio"
-          value={nombreNegocio}
-          onChange={(e) => setNombreNegocio(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Tu nombre"
-          value={nombreUsuario}
-          onChange={(e) => setNombreUsuario(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="w-full rounded bg-blue-600 p-2 text-white" type="submit">
-          Registrar
-        </button>
-        <p className="text-sm">
-          ¿Ya tienes cuenta? <Link className="text-blue-600" to="/login">Inicia sesión</Link>
-        </p>
+    <AuthLayout
+      title="Registra tu negocio"
+      subtitle="Crea tu espacio en CitaFlow en menos de un minuto."
+      footer={
+        <>
+          ¿Ya tienes cuenta?{" "}
+          <Link className="font-medium text-teal-700 hover:underline" to="/login">
+            Inicia sesión
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Field label="Nombre del negocio">
+          {(id) => (
+            <Input
+              id={id}
+              autoComplete="organization"
+              placeholder="Barbería El Corte"
+              value={nombreNegocio}
+              onChange={(e) => setNombreNegocio(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Field label="Tu nombre">
+          {(id) => (
+            <Input
+              id={id}
+              autoComplete="name"
+              value={nombreUsuario}
+              onChange={(e) => setNombreUsuario(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Field label="Email">
+          {(id) => (
+            <Input
+              id={id}
+              type="email"
+              autoComplete="email"
+              placeholder="tu@negocio.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Field label="Contraseña">
+          {(id) => (
+            <Input
+              id={id}
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Button type="submit" className="w-full" disabled={enviando}>
+          {enviando ? "Creando tu negocio…" : "Crear cuenta"}
+        </Button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }
