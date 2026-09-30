@@ -35,7 +35,7 @@ main() {
   grep -q '^VITE_API_URL=' client/.env.production 2>/dev/null || falla "Falta VITE_API_URL en client/.env.production."
   pm2 describe "$PM2_APP" >/dev/null 2>&1 || falla "PM2 no tiene un proceso llamado $PM2_APP."
   [[ -d "$NGINX_DIR" ]] || falla "No existe $NGINX_DIR."
-  sudo -v   # pide la contraseña de sudo ahora, no a media copia
+  sudo -n true 2>/dev/null || falla "este usuario necesita sudo sin contraseña"
 
   # ── 1. Código ─────────────────────────────────────────────────────────────
   paso "1/6 git pull"
