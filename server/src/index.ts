@@ -32,10 +32,15 @@ const origenesPermitidos = (process.env.CORS_ORIGIN as string)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Delante hay exactamente un proxy (balanceador de Render o Nginx): la IP real del
-// cliente es la que ese proxy agrega a X-Forwarded-For. Con `true` cualquiera podría
-// falsearla y saltarse el rate limit.
-app.set("trust proxy", 1);
+// Cuántos proxies hay delante de la API, para que Express (y el rate limit) tome la IP
+// real del cliente de X-Forwarded-For. 0 en DEV (sin proxy), 1 con Nginx (Prod); en Render
+// se midió (DEMO.md). Nunca `true`: cualquiera podría falsear su IP y saltarse el límite.
+const trustProxy = Number(process.env.TRUST_PROXY ?? 1);
+if (!Number.isInteger(trustProxy) || trustProxy < 0) {
+  console.error("TRUST_PROXY debe ser un entero >= 0. El servidor no arranca.");
+  process.exit(1);
+}
+app.set("trust proxy", trustProxy);
 
 app.use(helmet());
 app.use(cors({ origin: origenesPermitidos }));

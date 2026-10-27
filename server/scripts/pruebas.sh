@@ -10,6 +10,8 @@
 #
 # Variables opcionales:
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
+#   IP_REAL=<tu IP pública>    también prueba que la clave del rate limit sea esa IP (para
+#                              ajustar TRUST_PROXY). Ej.: IP_REAL=$(curl -s -4 https://api.ipify.org)
 #   PROBAR_429=1               al final fuerza el rate limit del login (429). Deja tu IP
 #                              bloqueada 15 min para login fallido: úsalo solo en local.
 
@@ -112,6 +114,38 @@ fi
 h "login con rate limit"             sí RateLimit-Policy POST /auth/login "" "" "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}"
 h "register con rate limit"          sí RateLimit-Policy POST /auth/register
 h "rutas de datos sin rate limit"    no RateLimit-Policy GET /services "" "Authorization: Bearer $TA"
+
+# La clave del rate limit (pk de RateLimit-Policy) sale de la IP que ve Express. Con un
+# X-Forwarded-For inventado debe seguir igual; si cambia, TRUST_PROXY está alto y cualquiera
+# puede brincarse el límite. Login correcto: no cuenta como intento fallido.
+clave() {
+  curl -s -m 90 -D - -o /dev/null -X POST "$API/auth/login" -H "$J" "$@" \
+    --data-raw "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}" \
+    | tr -d '\r' | grep -i '^ratelimit-policy:' | grep -o 'pk=:[^:]*:'
+}
+K0=$(clave); K1=$(clave -H "X-Forwarded-For: 203.0.113.7"); K2=$(clave -H "X-Forwarded-For: 198.51.100.9, 203.0.113.8")
+TOTAL=$((TOTAL + 1))
+if [ -n "$K0" ] && [ "$K0" = "$K1" ] && [ "$K0" = "$K2" ]; then
+  printf "✅ %-40s %s\n" "XFF falso no cambia la clave" "$K0"
+else
+  FALLAS=$((FALLAS + 1))
+  printf "❌ %-40s normal %s | falso %s | doble %s\n" "XFF falso no cambia la clave" "${K0:-?}" "${K1:-?}" "${K2:-?}"
+fi
+if [ -n "${IP_REAL:-}" ]; then
+  # pk = primeros 12 caracteres del sha256 de la clave (en base64). La clave la arma la
+  # propia librería: la IP tal cual en IPv4, la subred /56 en IPv6.
+  ESPERADA=$(node -e 'const { ipKeyGenerator } = require("express-rate-limit");
+    const h = require("crypto").createHash("sha256").update(ipKeyGenerator(process.argv[1])).digest("hex");
+    console.log(h.slice(0, 12))' "$IP_REAL")
+  OBTENIDA=$(printf %s "$K0" | sed 's/pk=://; s/://' | base64 -d 2>/dev/null)
+  TOTAL=$((TOTAL + 1))
+  if [ "$ESPERADA" = "$OBTENIDA" ]; then
+    printf "✅ %-40s %s\n" "la clave es la IP real ($IP_REAL)" "$ESPERADA"
+  else
+    FALLAS=$((FALLAS + 1))
+    printf "❌ %-40s esperada %s, obtenida %s\n" "la clave es la IP real ($IP_REAL)" "$ESPERADA" "${OBTENIDA:-?}"
+  fi
+fi
 
 echo "== Auth"
 t "login sin body"                 400 POST /auth/login

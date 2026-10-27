@@ -101,8 +101,12 @@ bash scripts/pruebas.sh <URL_API_PROD> prod                                # Pro
 - Termina con `Resultado: N/N como se esperaba.` (exit 1 si algo falla). Deja los datos como estaban salvo una cita **cancelada** ~40 días adelante → volver a sembrar antes de la demo.
 - Variables opcionales:
   - `ORIGEN_OK=<URL del front>`: también prueba que ese origen sí pase CORS. Ej.: `ORIGEN_OK=https://citaflow-staging-web.onrender.com bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging`.
+  - `IP_REAL=$(curl -s -4 https://api.ipify.org)`: también prueba que el rate limit use tu IP real (para ajustar `TRUST_PROXY`, ver abajo).
   - `PROBAR_429=1`: al final fuerza el 429 del login. **Bloquea tu IP 15 min** para login fallido (y en la escuela comparten IP): solo en local.
 - Cuenta 2 logins fallidos por corrida; el límite es 10 cada 15 min por IP, así que caben ~5 corridas seguidas.
+- **`TRUST_PROXY`** = cuántos proxies hay delante de la API, para que el rate limit vea la IP real del cliente. `0` en DEV, `1` con Nginx (Prod, es el valor por defecto), en Render el medido. Se da por bueno el número **más chico** con el que pasan las dos pruebas del script:
+  - `XFF falso no cambia la clave` (si falla, el valor está alto: cualquiera se brinca el límite).
+  - `la clave es la IP real` con `IP_REAL` (si falla, el valor está bajo: todos comparten el límite del proxy).
 
 ---
 
@@ -330,7 +334,13 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ~/citaflow/scripts/deploy-prod.sh
 ```
 
-- ⚠️ **Antes de desplegar**: el `server/.env` de la EC2 necesita `CORS_ORIGIN="http://3.222.23.172"`; sin ella la API no arranca.
+- ⚠️ **Antes de desplegar**: el `server/.env` de la EC2 necesita `CORS_ORIGIN="http://3.222.23.172"`; sin ella la API no arranca. `TRUST_PROXY` puede omitirse (vale 1 = Nginx).
+- ⚠️ **Después de desplegar**: repetir con Nginx la prueba de `TRUST_PROXY` (sección 0.4). Desde tu máquina, no desde la EC2:
+
+```bash
+cd server && IP_REAL=$(curl -s -4 https://api.ipify.org) bash scripts/pruebas.sh <URL_API_PROD> prod
+# Deben pasar "XFF falso no cambia la clave" y "la clave es la IP real". Si no, ajustar TRUST_PROXY en server/.env de la EC2.
+```
 - ⚠️ **Al montar la EC2 (o en la primera promoción después del cambio de contraseñas)** hay que correr el seed de Prod para que las cuentas usen `12345678` (sección 5). Borra y vuelve a sembrar la BD de Prod:
 
 ```bash
