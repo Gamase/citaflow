@@ -13,6 +13,8 @@
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
 #   IP_REAL=<tu IP pública>    también prueba que la clave del rate limit sea esa IP (para
 #                              ajustar TRUST_PROXY). Ej.: IP_REAL=$(curl -s -4 https://api.ipify.org)
+#   JWT_SECRET=<el del entorno> prueba que un token bien firmado pero de un usuario o negocio
+#                              que ya no existe dé 401. Sin ella ese caso se salta.
 #   PROBAR_429=1               al final fuerza el rate limit del login (429). Deja tu IP
 #                              bloqueada 15 min para login fallido: úsalo solo en local.
 
@@ -158,6 +160,27 @@ t "register password de 6"         400 POST /auth/register "" '{"nombreNegocio":
 t "register email inválido"        400 POST /auth/register "" '{"nombreNegocio":"X","nombreUsuario":"X","email":"no-es-email","password":"12345678"}'
 t "register nombre negocio vacío"  400 POST /auth/register "" '{"nombreNegocio":"   ","nombreUsuario":"X","email":"x@x.com","password":"12345678"}'
 t "register email repetido"        409 POST /auth/register "" "{\"nombreNegocio\":\"X\",\"nombreUsuario\":\"X\",\"email\":\"$A_EMAIL\",\"password\":\"12345678\"}"
+
+echo "== Token de un usuario o negocio que no existe"
+if [ -z "${JWT_SECRET:-}" ]; then
+  echo "⏭️  Se salta: define JWT_SECRET (el del entorno que pruebas) para correr este caso."
+else
+  # Datos del payload de un token (sin verificar la firma: solo para leer los ids).
+  payload() { node -e 'const p = process.argv[1].split(".")[1]; console.log(JSON.parse(Buffer.from(p, "base64url"))[process.argv[2]])' "$1" "$2"; }
+  firmar() { node -e 'console.log(require("jsonwebtoken").sign({ userId: process.argv[1], tenantId: process.argv[2] }, process.env.JWT_SECRET, { expiresIn: "5m" }))' "$1" "$2"; }
+  UID_A=$(payload "$TA" userId)
+  # Control: un token con los ids reales de A firmado con este JWT_SECRET tiene que pasar.
+  # Si no, el secreto no es el de este entorno y un 401 no probaría nada.
+  CONTROL=$(firmar "$UID_A" "$(payload "$TA" tenantId)")
+  if [ "$(curl -s -m 90 -o /dev/null -w "%{http_code}" "$API/clients" -H "Authorization: Bearer $CONTROL")" != "200" ]; then
+    echo "⏭️  Se salta: JWT_SECRET no es el de este entorno (el token de control no pasó)."
+  else
+    t "token de control (ids reales)"  200 GET /clients "$CONTROL"
+    t "token con ids inexistentes"     401 GET /clients "$(firmar "$UUID0" "$UUID0")"
+    t "token con negocio inexistente (crear)" 401 POST /clients "$(firmar "$UID_A" "$UUID0")" '{"nombre":"X","telefono":"5500000000"}'
+    t "token: usuario de A + negocio de B" 401 GET /clients "$(firmar "$UID_A" "$(payload "$TB" tenantId)")"
+  fi
+fi
 
 echo "== Dashboard"
 # Rango de ±15 días: cubre las citas del seed (de -2 a +2 días) y deja fuera las que crea

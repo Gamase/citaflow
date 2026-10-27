@@ -102,6 +102,7 @@ bash scripts/pruebas.sh <URL_API_PROD> prod                                # Pro
 - Variables opcionales:
   - `ORIGEN_OK=<URL del front>`: también prueba que ese origen sí pase CORS. Ej.: `ORIGEN_OK=https://citaflow-staging-web.onrender.com bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging`.
   - `IP_REAL=$(curl -s -4 https://api.ipify.org)`: también prueba que el rate limit use tu IP real (para ajustar `TRUST_PROXY`, ver abajo).
+  - `JWT_SECRET=<el del entorno>`: prueba que un token bien firmado de un usuario/negocio que ya no existe dé 401. Sin ella ese caso se salta (también si el secreto no corresponde al entorno). No lo pongas en archivos: solo en el comando.
   - `PROBAR_429=1`: al final fuerza el 429 del login. **Bloquea tu IP 15 min** para login fallido (y en la escuela comparten IP): solo en local.
 - Cuenta 2 logins fallidos por corrida; el límite es 10 cada 15 min por IP, así que caben ~5 corridas seguidas.
 - **`TRUST_PROXY`** (obligatoria) = cuántos proxies hay delante de la API, para que el rate limit vea la IP real del cliente. `0` en DEV, `1` con Nginx (Prod), `3` en Render. Se da por bueno el número **más chico** con el que pasan las dos pruebas del script:
@@ -301,6 +302,12 @@ curl -i $API/appointments -H "Authorization: Bearer <TOKEN_BARBERIA>x"
 - Cambia el payload → la firma ya no coincide → `jwt.verify` falla → 401.
 - Para firmar uno válido necesitas `JWT_SECRET`, que solo vive en el `.env` del servidor.
 - Si roban un token válido: expira a los 7 días.
+
+### ¿Por qué no basta con verificar la firma del JWT?
+
+- La firma prueba que el token lo emitimos nosotros, no que el usuario y su negocio **sigan existiendo**. Pasó en el proyecto: después de re-sembrar la BD, un token viejo pasaba la firma con un `tenantId` que ya no existía → al crear daba 500 (llave foránea, P2003) y al listar devolvía listas vacías sin avisar.
+- Arreglo: `verificarToken` busca el usuario con `{ id: userId, tenantId }` después de verificar la firma; si no existe → 401 y el front manda al login. Cuesta una consulta por llave primaria en cada petición, despreciable a esta escala.
+- Red de seguridad extra: el manejador global convierte P2003 en 409 en vez de 500.
 
 ### ¿Cómo escala al agregar negocios?
 

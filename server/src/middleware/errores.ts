@@ -13,6 +13,9 @@ export function manejarErrores(err: unknown, req: Request, res: Response, next: 
     if (err.code === "P2002") {
       return res.status(409).json({ error: "Ya existe un registro con esos datos" });
     }
+    if (err.code === "P2003") {
+      return res.status(409).json({ error: "La operación hace referencia a un registro que no existe" });
+    }
     if (err.code === "P2025") {
       return res.status(404).json({ error: "No encontrado" });
     }
