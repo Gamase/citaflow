@@ -58,6 +58,12 @@ export const clienteSchema = z.object({
   email: email.optional(),
 });
 
+// Al editar, `email: null` borra el email que tenía.
+export const editarClienteSchema = clienteSchema
+  .extend({ email: email.nullable() })
+  .partial()
+  .refine((datos) => Object.keys(datos).length > 0, "No hay cambios que guardar");
+
 // --- Appointments ---
 
 export const citaSchema = z.object({
@@ -68,6 +74,9 @@ export const citaSchema = z.object({
     .pipe(z.coerce.date({ error: "La fecha y hora no es válida" })),
 });
 
+// Reagendar solo mueve la fecha: cambiar de servicio es cancelar y agendar otra.
+export const reagendarSchema = citaSchema.pick({ fechaHora: true });
+
 export const estadoSchema = z.object({
   estado: z.enum(EstadoCita, { error: "Estado no válido" }),
 });
@@ -77,5 +86,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type ServicioInput = z.infer<typeof servicioSchema>;
 export type EditarServicioInput = z.infer<typeof editarServicioSchema>;
 export type ClienteInput = z.infer<typeof clienteSchema>;
+export type EditarClienteInput = z.infer<typeof editarClienteSchema>;
 export type CitaInput = z.infer<typeof citaSchema>;
+export type ReagendarInput = z.infer<typeof reagendarSchema>;
 export type EstadoInput = z.infer<typeof estadoSchema>;

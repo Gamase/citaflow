@@ -5,8 +5,8 @@
 #   (ejemplos por entorno en DEMO.md, sección 0.4)
 #
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
-# así que la BD tiene que tener ese seed. Deja los datos como estaban, salvo una cita
-# CANCELADA ~40 días adelante (nada se borra en CitaFlow).
+# así que la BD tiene que tener ese seed. Deja los datos como estaban, salvo dos citas
+# CANCELADAS ~40 días adelante (nada se borra en CitaFlow).
 #
 # Variables opcionales:
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
@@ -91,11 +91,13 @@ fi
 
 primero() { curl -s -m 90 "$API/$1" -H "Authorization: Bearer $2" | campo - "0.$3"; }
 CLI_A=$(primero clients "$TA" id)
+TEL_A=$(primero clients "$TA" telefono)
 SRV_A=$(primero services "$TA" id)
 PRECIO_A=$(primero services "$TA" precio)
 CLI_B=$(primero clients "$TB" id)
 UUID0=00000000-0000-4000-8000-000000000000
 FUT=$(node -p 'const d=new Date(Date.now()+40*864e5); d.setUTCHours(3,11,0,0); d.toISOString()')
+FUT2=$(node -p "new Date(new Date('$FUT').getTime() + 2*3600e3).toISOString()")
 TEL="55$(printf %08d $((RANDOM * 1000 + RANDOM % 1000)))"
 
 echo "API: $API  |  entorno: $LABEL  |  A: $A_EMAIL  |  B: $B_EMAIL"
@@ -178,6 +180,12 @@ t "POST email inválido"            400 POST /clients "$TA" '{"nombre":"Ana","te
 t "POST cliente válido"            201 POST /clients "$TA" "{\"nombre\":\"Prueba temporal\",\"telefono\":\"$TEL\"}"
 CLI_TMP=$(campo "$RESP" id)
 t "POST mismo teléfono"            409 POST /clients "$TA" "{\"nombre\":\"Otra\",\"telefono\":\"$TEL\"}"
+t "PATCH cliente de otro negocio"  404 PATCH "/clients/$CLI_B" "$TA" '{"nombre":"Intruso"}'
+t "PATCH cliente body vacío"       400 PATCH "/clients/$CLI_TMP" "$TA" '{}'
+t "PATCH teléfono de 9 dígitos"    400 PATCH "/clients/$CLI_TMP" "$TA" '{"telefono":"123456789"}'
+t "PATCH teléfono de otro cliente" 409 PATCH "/clients/$CLI_TMP" "$TA" "{\"telefono\":\"$TEL_A\"}"
+t "PATCH cliente válido"           200 PATCH "/clients/$CLI_TMP" "$TA" '{"nombre":"Prueba editada","email":"prueba@ejemplo.com"}'
+t "PATCH quitar email (null)"      200 PATCH "/clients/$CLI_TMP" "$TA" '{"email":null}'
 t "DELETE cliente de otro negocio" 404 DELETE "/clients/$CLI_B" "$TA"
 t "DELETE cliente sin citas"       204 DELETE "/clients/$CLI_TMP" "$TA"
 
@@ -191,11 +199,20 @@ t "POST cliente de otro negocio"   404 POST /appointments "$TA" "{\"clientId\":\
 t "POST cita válida"               201 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT\"}"
 CITA=$(campo "$RESP" id)
 t "POST mismo horario (choque)"    409 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT\"}"
+t "POST segunda cita (+2 h)"       201 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT2\"}"
+CITA2=$(campo "$RESP" id)
+t "reagendar a horario ocupado"    409 PATCH "/appointments/$CITA2" "$TA" "{\"fechaHora\":\"$FUT\"}"
+t "reagendar al pasado"            400 PATCH "/appointments/$CITA2" "$TA" '{"fechaHora":"2020-01-01T10:00:00.000Z"}'
+t "reagendar sin fecha"            400 PATCH "/appointments/$CITA2" "$TA" '{}'
+t "reagendar cita ajena"           404 PATCH "/appointments/$CITA2" "$TB" "{\"fechaHora\":\"$FUT2\"}"
+t "reagendar al mismo horario"     200 PATCH "/appointments/$CITA" "$TA" "{\"fechaHora\":\"$FUT\"}"
 t "PATCH estado inexistente"       400 PATCH "/appointments/$CITA/estado" "$TA" '{"estado":"VOLANDO"}'
 t "PATCH estado sin body"          400 PATCH "/appointments/$CITA/estado" "$TA"
 t "PATCH Atendida en cita futura"  409 PATCH "/appointments/$CITA/estado" "$TA" '{"estado":"COMPLETADA"}'
 t "PATCH estado de cita ajena"     404 PATCH "/appointments/$CITA/estado" "$TB" '{"estado":"CONFIRMADA"}'
 t "PATCH Cancelar"                 200 PATCH "/appointments/$CITA/estado" "$TA" '{"estado":"CANCELADA"}'
+t "reagendar cita cancelada"       409 PATCH "/appointments/$CITA" "$TA" "{\"fechaHora\":\"$FUT2\"}"
+t "cancelar la segunda cita"       200 PATCH "/appointments/$CITA2/estado" "$TA" '{"estado":"CANCELADA"}'
 
 if [ "${PROBAR_429:-}" = "1" ]; then
   echo "== Rate limit (PROBAR_429=1)"

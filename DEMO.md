@@ -6,7 +6,7 @@
 
 ## 0. Checklist antes de entrar
 
-- ⚠️ **Volver a correr el seed del entorno de la demo** (`SEED_LABEL=prod` o `staging`, sección 5) si después del último seed se corrió `pruebas.sh` (0.4): el script deja una cita cancelada de prueba.
+- ⚠️ **Volver a correr el seed del entorno de la demo** (`SEED_LABEL=prod` o `staging`, sección 5) si después del último seed se corrió `pruebas.sh` (0.4): el script deja citas canceladas de prueba.
 
 ### 0.1 Learner Lab + Producción
 
@@ -98,7 +98,7 @@ bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging  # Sta
 bash scripts/pruebas.sh <URL_API_PROD> prod                                # Prod
 ```
 
-- Termina con `Resultado: N/N como se esperaba.` (exit 1 si algo falla). Deja los datos como estaban salvo una cita **cancelada** ~40 días adelante → volver a sembrar antes de la demo.
+- Termina con `Resultado: N/N como se esperaba.` (exit 1 si algo falla). Deja los datos como estaban salvo dos citas **canceladas** ~40 días adelante → volver a sembrar antes de la demo.
 - Variables opcionales:
   - `ORIGEN_OK=<URL del front>`: también prueba que ese origen sí pase CORS. Ej.: `ORIGEN_OK=https://citaflow-staging-web.onrender.com bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging`.
   - `IP_REAL=$(curl -s -4 https://api.ipify.org)`: también prueba que el rate limit use tu IP real (para ajustar `TRUST_PROXY`, ver abajo).

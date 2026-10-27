@@ -2,7 +2,7 @@ import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
-import { clienteSchema, ClienteInput } from "../schemas";
+import { clienteSchema, editarClienteSchema, ClienteInput, EditarClienteInput } from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -24,6 +24,32 @@ router.post("/", validar(clienteSchema), async (req, res) => {
       data: { nombre, telefono, email, tenantId: req.tenantId as string },
     });
     res.status(201).json(client);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ error: "Ya existe un cliente con ese teléfono" });
+    }
+    throw err;
+  }
+});
+
+// Campos opcionales: solo se valida y actualiza lo que venga.
+router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
+  const { nombre, telefono, email } = req.body as EditarClienteInput;
+
+  const client = await prisma.client.findFirst({
+    where: { id: req.params.id, tenantId: req.tenantId as string },
+  });
+
+  if (!client) {
+    return res.status(404).json({ error: "Cliente no encontrado" });
+  }
+
+  try {
+    const actualizado = await prisma.client.update({
+      where: { id: client.id, tenantId: req.tenantId as string },
+      data: { nombre, telefono, email },
+    });
+    res.json(actualizado);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return res.status(409).json({ error: "Ya existe un cliente con ese teléfono" });

@@ -22,3 +22,10 @@ export function formatFecha(iso: string) {
 export function formatHora(iso: string) {
   return hora.format(new Date(iso));
 }
+
+/** ISO → "2026-12-05T20:11" en hora local, el formato que pide <input type="datetime-local">. */
+export function formatDatetimeLocal(iso: string) {
+  const d = new Date(iso);
+  const dos = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}T${dos(d.getHours())}:${dos(d.getMinutes())}`;
+}

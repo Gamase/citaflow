@@ -10,7 +10,7 @@ import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
-import { formatFecha, formatHora } from "../lib/format";
+import { formatDatetimeLocal, formatFecha, formatHora } from "../lib/format";
 
 interface Client {
   id: string;
@@ -95,6 +95,8 @@ export default function Appointments() {
   const [fechaHora, setFechaHora] = useState("");
   const [porConfirmar, setPorConfirmar] = useState<{ id: string; estado: Destino } | null>(null);
   const [cambiando, setCambiando] = useState<string | null>(null);
+  // Cita que se está reagendando y la nueva fecha elegida (valor del datetime-local).
+  const [reagendando, setReagendando] = useState<{ id: string; fechaHora: string } | null>(null);
   const toast = useToast();
 
   function load() {
@@ -151,7 +153,22 @@ export default function Appointments() {
     }
   }
 
+  async function reagendar(id: string, fechaLocal: string) {
+    setCambiando(id);
+    try {
+      await api.patch(`/appointments/${id}`, { fechaHora: new Date(fechaLocal).toISOString() });
+      setReagendando(null);
+      toast.success("Cita reagendada.");
+      load();
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo reagendar la cita."));
+    } finally {
+      setCambiando(null);
+    }
+  }
+
   function elegirAccion(id: string, estado: Destino) {
+    setReagendando(null);
     if (ACCION[estado].pregunta) {
       setPorConfirmar({ id, estado });
     } else {
@@ -274,6 +291,11 @@ export default function Appointments() {
                   (d) => yaEmpezo || !SOLO_DESPUES_DEL_INICIO.includes(d),
                 );
                 const confirmando = porConfirmar?.id === a.id ? porConfirmar : null;
+                // Solo los estados no finales (los que tienen acciones) se pueden reagendar.
+                const reagendable = a.estado in ACCIONES;
+                const moviendo = reagendando?.id === a.id ? reagendando : null;
+                const nuevaFecha = moviendo?.fechaHora ? new Date(moviendo.fechaHora).toISOString() : null;
+                const mismaFecha = moviendo?.fechaHora === formatDatetimeLocal(a.fechaHora);
                 return (
                   <Tr key={a.id} className={atenuada ? "text-faint" : ""}>
                     <Td>
@@ -290,7 +312,31 @@ export default function Appointments() {
                       <Badge tone={estado.tone}>{estado.label}</Badge>
                     </Td>
                     <Td align="right">
-                      {confirmando ? (
+                      {moviendo ? (
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Input
+                            aria-label="Nueva fecha y hora"
+                            type="datetime-local"
+                            className="h-9 w-auto"
+                            min={formatDatetimeLocal(new Date().toISOString())}
+                            value={moviendo.fechaHora}
+                            onChange={(e) => setReagendando({ id: a.id, fechaHora: e.target.value })}
+                            autoFocus
+                          />
+                          <Button size="sm" variant="secondary" onClick={() => setReagendando(null)}>
+                            Cancelar
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={!nuevaFecha || mismaFecha || cambiando === a.id}
+                            onClick={() => reagendar(a.id, moviendo.fechaHora)}
+                          >
+                            {nuevaFecha && !mismaFecha
+                              ? `Mover a ${formatFecha(nuevaFecha)} ${formatHora(nuevaFecha)}`
+                              : "Elige otra fecha"}
+                          </Button>
+                        </div>
+                      ) : confirmando ? (
                         <div className="flex items-center justify-end gap-3">
                           <span className="text-sm text-fg">{ACCION[confirmando.estado].pregunta}</span>
                           <Button size="sm" variant="secondary" onClick={() => setPorConfirmar(null)} autoFocus>
@@ -307,6 +353,18 @@ export default function Appointments() {
                         </div>
                       ) : (
                         <div className="flex justify-end gap-4">
+                          {reagendable && (
+                            <Button
+                              variant="link"
+                              disabled={cambiando === a.id}
+                              onClick={() => {
+                                setPorConfirmar(null);
+                                setReagendando({ id: a.id, fechaHora: formatDatetimeLocal(a.fechaHora) });
+                              }}
+                            >
+                              Reagendar
+                            </Button>
+                          )}
                           {acciones.map((destino) => (
                             <Button
                               key={destino}
