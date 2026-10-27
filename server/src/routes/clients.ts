@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
+import { validar } from "../middleware/validar";
+import { clienteSchema, ClienteInput } from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -14,12 +16,8 @@ router.get("/", async (req, res) => {
   res.json(clients);
 });
 
-router.post("/", async (req, res) => {
-  const { nombre, telefono, email } = req.body;
-
-  if (!/^\d{10}$/.test(telefono)) {
-    return res.status(400).json({ error: "El teléfono debe tener 10 dígitos" });
-  }
+router.post("/", validar(clienteSchema), async (req, res) => {
+  const { nombre, telefono, email } = req.body as ClienteInput;
 
   try {
     const client = await prisma.client.create({
@@ -44,14 +42,14 @@ router.delete("/:id", async (req, res) => {
   }
 
   const citasLigadas = await prisma.appointment.count({
-    where: { clientId: client.id },
+    where: { clientId: client.id, tenantId: req.tenantId as string },
   });
 
   if (citasLigadas > 0) {
     return res.status(409).json({ error: "No se puede eliminar: tiene citas asociadas" });
   }
 
-  await prisma.client.delete({ where: { id: client.id } });
+  await prisma.client.delete({ where: { id: client.id, tenantId: req.tenantId as string } });
   res.status(204).send();
 });
 

@@ -20,8 +20,8 @@ curl localhost:3000/health   # esperado: {"status":"ok"}
 
 ### 0.2 Ventanas del navegador
 
-- Ventana normal → **Barbería El Corte** (`admin@barberia.com` / `123456`).
-- Ventana incógnito → **Spa Relax** (`admin@sparelax.com` / `654321`).
+- Ventana normal → **Barbería El Corte** (`admin@barberia.com` / `12345678`).
+- Ventana incógnito → **Spa Relax** (`admin@sparelax.com` / `12345678`).
 - Pestaña con la pantalla de **Registro** lista (ventana aparte o 2ª incógnito).
 - Editor abierto en `server/` con estos archivos ya en pestañas:
   - `prisma/schema.prisma`
@@ -46,7 +46,7 @@ API=<URL_API_PROD>
 ```bash
 TOKEN_BARBERIA=$(curl -s -X POST $API/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@barberia.com","password":"123456"}' | jq -r .token)
+  -d '{"email":"admin@barberia.com","password":"12345678"}' | jq -r .token)
 ```
 
 - Opción B, desde el navegador (ventana de Barbería) → DevTools → Console:
@@ -60,7 +60,7 @@ localStorage.getItem("token")
 ```bash
 TOKEN_SPA=$(curl -s -X POST $API/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@sparelax.com","password":"654321"}' | jq -r .token)
+  -d '{"email":"admin@sparelax.com","password":"12345678"}' | jq -r .token)
 
 curl -s $API/appointments -H "Authorization: Bearer $TOKEN_SPA" \
   | jq '.[] | {id, estado, cliente: .client.nombre}'
@@ -70,7 +70,7 @@ curl -s $API/appointments -H "Authorization: Bearer $TOKEN_SPA" \
 
 ```bash
 curl -s -X POST $API/auth/login -H "Content-Type: application/json" \
-  -d '{"email":"admin@sparelax.com","password":"654321"}' | jq -r .tenant.id
+  -d '{"email":"admin@sparelax.com","password":"12345678"}' | jq -r .tenant.id
 ```
 
 **Comando del ataque** (dejar pegado, con los placeholders reemplazados)
@@ -84,6 +84,19 @@ curl -i -X PATCH $API/appointments/<ID_CITA_SPA>/estado \
 
 - Usar `CONFIRMADA`, no `CANCELADA`: si por error se manda con el token correcto, no deja la cita en un estado final.
 - El `estado` tiene que ser válido: la ruta valida el estado **antes** de buscar la cita (si no, da 400 en vez de 404).
+
+### 0.4 Pruebas de humo de la API (opcional)
+
+- Script `server/scripts/pruebas.sh`: ~40 casos malos y buenos (400/404/409 esperados, nunca 500). Toma las cuentas del seed del entorno (`server/prisma/seed-data.ts`), así que la BD debe tener ese seed.
+- Desde `server/`, con la URL base de la API y el entorno:
+
+```bash
+bash scripts/pruebas.sh http://localhost:3000                              # DEV
+bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging  # Staging
+bash scripts/pruebas.sh <URL_API_PROD> prod                                # Prod
+```
+
+- Termina con `Resultado: N/N como se esperaba.` (exit 1 si algo falla). Deja los datos como estaban salvo una cita **cancelada** ~40 días adelante.
 
 ---
 
@@ -107,7 +120,7 @@ curl -i -X PATCH $API/appointments/<ID_CITA_SPA>/estado \
 | Nombre del negocio | Taller Moto Veloz       |
 | Tu nombre          | Carlos Ruiz             |
 | Email              | admin@motoveloz.com     |
-| Contraseña         | 123456                  |
+| Contraseña         | 12345678                |
 
 - Email repetido → 409 con mensaje claro en la UI ("Ese correo ya está registrado").
 - El registro **no pide teléfono**; el teléfono de 10 dígitos se valida al crear clientes (paso 1.3).
@@ -311,6 +324,12 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ~/citaflow/scripts/deploy-prod.sh
 ```
 
+- ⚠️ **Al montar la EC2 (o en la primera promoción después del cambio de contraseñas)** hay que correr el seed de Prod para que las cuentas usen `12345678` (sección 5). Borra y vuelve a sembrar la BD de Prod:
+
+```bash
+cd ~/citaflow/server && SEED_LABEL=prod npm run seed
+```
+
 ---
 
 ## 5. Credenciales de la app
@@ -321,22 +340,22 @@ Solo existen si el seed se corrió en ese entorno.
 
 | Negocio                | Email              | Contraseña |
 | ---------------------- | ------------------ | ---------- |
-| Taller El Tornillo     | admin@tornillo.dev | 123456     |
-| Consultorio Dr. Prueba | admin@drprueba.dev | 123456     |
+| Taller El Tornillo     | admin@tornillo.dev | 12345678   |
+| Consultorio Dr. Prueba | admin@drprueba.dev | 12345678   |
 
 ### Staging — `SEED_LABEL=staging npm run seed`
 
 | Negocio           | Email                 | Contraseña |
 | ----------------- | --------------------- | ---------- |
-| Salón Bella Vista | admin@bellavista.test | 123456     |
-| MotorPro Servicio | admin@motorpro.test   | 123456     |
+| Salón Bella Vista | admin@bellavista.test | 12345678   |
+| MotorPro Servicio | admin@motorpro.test   | 12345678   |
 
 ### Producción — `SEED_LABEL=prod npm run seed`
 
 | Negocio           | Email              | Contraseña |
 | ----------------- | ------------------ | ---------- |
-| Barbería El Corte | admin@barberia.com | 123456     |
-| Spa Relax         | admin@sparelax.com | 654321     |
+| Barbería El Corte | admin@barberia.com | 12345678   |
+| Spa Relax         | admin@sparelax.com | 12345678   |
 
 Negocios distintos por entorno, a propósito: de un vistazo sabes en cuál estás.
 

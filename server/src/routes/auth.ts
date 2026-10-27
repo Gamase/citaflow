@@ -2,12 +2,14 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { PrismaClient, Prisma } from "@prisma/client";
+import { validar } from "../middleware/validar";
+import { loginSchema, registroSchema, LoginInput, RegistroInput } from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
 
-router.post("/register", async (req, res) => {
-  const { nombreNegocio, email, password, nombreUsuario } = req.body;
+router.post("/register", validar(registroSchema), async (req, res) => {
+  const { nombreNegocio, email, password, nombreUsuario } = req.body as RegistroInput;
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -52,8 +54,8 @@ router.post("/register", async (req, res) => {
   });
 });
 
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+router.post("/login", validar(loginSchema), async (req, res) => {
+  const { email, password } = req.body as LoginInput;
 
   const user = await prisma.user.findUnique({
     where: { email },

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
+import { validar } from "../middleware/validar";
+import { editarServicioSchema, servicioSchema, EditarServicioInput, ServicioInput } from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -14,13 +16,13 @@ router.get("/", async (req, res) => {
   res.json(services);
 });
 
-router.post("/", async (req, res) => {
-  const { nombre, duracionMin, precio } = req.body;
+router.post("/", validar(servicioSchema), async (req, res) => {
+  const { nombre, duracionMin, precio } = req.body as ServicioInput;
 
   const existente = await prisma.service.findFirst({
     where: {
       tenantId: req.tenantId as string,
-      nombre: { equals: nombre.trim(), mode: "insensitive" },
+      nombre: { equals: nombre, mode: "insensitive" },
     },
   });
 
@@ -30,7 +32,7 @@ router.post("/", async (req, res) => {
 
   try {
     const service = await prisma.service.create({
-      data: { nombre: nombre.trim(), duracionMin, precio, tenantId: req.tenantId as string },
+      data: { nombre, duracionMin, precio, tenantId: req.tenantId as string },
     });
     res.status(201).json(service);
   } catch (err) {
@@ -41,8 +43,9 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
-  const { nombre, duracionMin, precio } = req.body;
+// Campos opcionales: solo se valida y actualiza lo que venga.
+router.patch("/:id", validar(editarServicioSchema), async (req, res) => {
+  const { nombre, duracionMin, precio } = req.body as EditarServicioInput;
 
   const service = await prisma.service.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
@@ -52,24 +55,32 @@ router.patch("/:id", async (req, res) => {
     return res.status(404).json({ error: "Servicio no encontrado" });
   }
 
-  const duplicado = await prisma.service.findFirst({
-    where: {
-      tenantId: req.tenantId as string,
-      nombre: { equals: nombre.trim(), mode: "insensitive" },
-      NOT: { id: service.id },
-    },
-  });
+  if (nombre !== undefined) {
+    const duplicado = await prisma.service.findFirst({
+      where: {
+        tenantId: req.tenantId as string,
+        nombre: { equals: nombre, mode: "insensitive" },
+        NOT: { id: service.id },
+      },
+    });
 
-  if (duplicado) {
-    return res.status(409).json({ error: "Ya existe un servicio con ese nombre" });
+    if (duplicado) {
+      return res.status(409).json({ error: "Ya existe un servicio con ese nombre" });
+    }
   }
 
-  const actualizado = await prisma.service.update({
-    where: { id: service.id },
-    data: { nombre: nombre.trim(), duracionMin, precio },
-  });
-
-  res.json(actualizado);
+  try {
+    const actualizado = await prisma.service.update({
+      where: { id: service.id, tenantId: req.tenantId as string },
+      data: { nombre, duracionMin, precio },
+    });
+    res.json(actualizado);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ error: "Ya existe un servicio con ese nombre" });
+    }
+    throw err;
+  }
 });
 
 router.delete("/:id", async (req, res) => {
@@ -82,14 +93,14 @@ router.delete("/:id", async (req, res) => {
   }
 
   const citasLigadas = await prisma.appointment.count({
-    where: { serviceId: service.id },
+    where: { serviceId: service.id, tenantId: req.tenantId as string },
   });
 
   if (citasLigadas > 0) {
     return res.status(409).json({ error: "No se puede eliminar: tiene citas asociadas" });
   }
 
-  await prisma.service.delete({ where: { id: service.id } });
+  await prisma.service.delete({ where: { id: service.id, tenantId: req.tenantId as string } });
   res.status(204).send();
 });
 

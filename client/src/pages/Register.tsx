@@ -86,7 +86,7 @@ export default function Register() {
             />
           )}
         </Field>
-        <Field label="Contraseña">
+        <Field label="Contraseña" hint="Mínimo 8 caracteres">
           {(id) => (
             <Input
               id={id}
@@ -95,6 +95,7 @@ export default function Register() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              minLength={8}
             />
           )}
         </Field>

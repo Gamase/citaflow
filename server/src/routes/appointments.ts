@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { EstadoCita, PrismaClient } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
+import { validar } from "../middleware/validar";
+import { citaSchema, estadoSchema, CitaInput, EstadoInput } from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -26,6 +28,9 @@ const SOLO_DESPUES_DEL_INICIO: Partial<Record<EstadoCita, string>> = {
 // Estados que ya no ocupan su horario: se puede agendar otra cita encima.
 const LIBERAN_HORARIO: EstadoCita[] = ["CANCELADA", "NO_ASISTIO"];
 
+// Tolerancia para agendar "ahora mismo" sin que el reloj del cliente lo rechace.
+const MARGEN_PASADO_MS = 5 * 60000;
+
 const NOMBRE_ESTADO: Record<EstadoCita, string> = {
   PENDIENTE: "Pendiente",
   CONFIRMADA: "Confirmada",
@@ -43,8 +48,12 @@ router.get("/", async (req, res) => {
   res.json(appointments);
 });
 
-router.post("/", async (req, res) => {
-  const { clientId, serviceId, fechaHora } = req.body;
+router.post("/", validar(citaSchema), async (req, res) => {
+  const { clientId, serviceId, fechaHora } = req.body as CitaInput;
+
+  if (fechaHora.getTime() < Date.now() - MARGEN_PASADO_MS) {
+    return res.status(400).json({ error: "No puedes agendar una cita en el pasado" });
+  }
 
   const service = await prisma.service.findFirst({
     where: { id: serviceId, tenantId: req.tenantId as string },
@@ -62,7 +71,7 @@ router.post("/", async (req, res) => {
     return res.status(404).json({ error: "Cliente no encontrado" });
   }
 
-  const inicio = new Date(fechaHora);
+  const inicio = fechaHora;
   const fin = new Date(inicio.getTime() + service.duracionMin * 60000);
 
   // Todas las citas activas que empiezan antes de que termine la nueva
@@ -101,13 +110,8 @@ router.post("/", async (req, res) => {
   res.status(201).json(appointment);
 });
 
-router.patch("/:id/estado", async (req, res) => {
-  const { estado } = req.body as { estado?: string };
-
-  if (typeof estado !== "string" || !Object.hasOwn(TRANSICIONES, estado)) {
-    return res.status(400).json({ error: "Estado no válido" });
-  }
-  const nuevo = estado as EstadoCita;
+router.patch("/:id/estado", validar(estadoSchema), async (req, res) => {
+  const { estado: nuevo } = req.body as EstadoInput;
 
   const appointment = await prisma.appointment.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
