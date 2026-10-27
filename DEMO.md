@@ -104,9 +104,10 @@ bash scripts/pruebas.sh <URL_API_PROD> prod                                # Pro
   - `IP_REAL=$(curl -s -4 https://api.ipify.org)`: también prueba que el rate limit use tu IP real (para ajustar `TRUST_PROXY`, ver abajo).
   - `PROBAR_429=1`: al final fuerza el 429 del login. **Bloquea tu IP 15 min** para login fallido (y en la escuela comparten IP): solo en local.
 - Cuenta 2 logins fallidos por corrida; el límite es 10 cada 15 min por IP, así que caben ~5 corridas seguidas.
-- **`TRUST_PROXY`** = cuántos proxies hay delante de la API, para que el rate limit vea la IP real del cliente. `0` en DEV, `1` con Nginx (Prod, es el valor por defecto), en Render el medido. Se da por bueno el número **más chico** con el que pasan las dos pruebas del script:
+- **`TRUST_PROXY`** (obligatoria) = cuántos proxies hay delante de la API, para que el rate limit vea la IP real del cliente. `0` en DEV, `1` con Nginx (Prod), `3` en Render. Se da por bueno el número **más chico** con el que pasan las dos pruebas del script:
   - `XFF falso no cambia la clave` (si falla, el valor está alto: cualquiera se brinca el límite).
   - `la clave es la IP real` con `IP_REAL` (si falla, el valor está bajo: todos comparten el límite del proxy).
+- **Render = 3 es un valor empírico**, no documentado por Render: delante de la API hay varias capas de proxy que no controlamos. Medido el 27/10/2026: con 1 la clave era la IP de un proxy interno; con 2, una IP distinta casi en cada petición (7 de 8); con 3, la IP real en 8 de 8 y sin cambiar con `X-Forwarded-For` falso. Si Render cambia su infraestructura, el número puede dejar de servir: por eso la prueba vive en `pruebas.sh` y conviene correrla con `IP_REAL` después de cada deploy importante.
 
 ---
 
@@ -334,7 +335,7 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ~/citaflow/scripts/deploy-prod.sh
 ```
 
-- ⚠️ **Antes de desplegar**: el `server/.env` de la EC2 necesita `CORS_ORIGIN="http://3.222.23.172"`; sin ella la API no arranca. `TRUST_PROXY` puede omitirse (vale 1 = Nginx).
+- ⚠️ **Antes de desplegar**: el `server/.env` de la EC2 necesita `CORS_ORIGIN="http://3.222.23.172"`; sin ella la API no arranca. También `TRUST_PROXY=1` (Nginx), igual de obligatoria.
 - ⚠️ **Después de desplegar**: repetir con Nginx la prueba de `TRUST_PROXY` (sección 0.4). Desde tu máquina, no desde la EC2:
 
 ```bash

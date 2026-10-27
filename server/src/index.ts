@@ -16,7 +16,7 @@ try {
 }
 
 // Sin estas el server no tiene sentido: no arranca.
-for (const variable of ["JWT_SECRET", "DATABASE_URL", "CORS_ORIGIN"]) {
+for (const variable of ["JWT_SECRET", "DATABASE_URL", "CORS_ORIGIN", "TRUST_PROXY"]) {
   if (!process.env[variable]) {
     console.error(`Falta la variable de entorno ${variable}. El servidor no arranca.`);
     process.exit(1);
@@ -33,9 +33,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Cuántos proxies hay delante de la API, para que Express (y el rate limit) tome la IP
-// real del cliente de X-Forwarded-For. 0 en DEV (sin proxy), 1 con Nginx (Prod); en Render
-// se midió (DEMO.md). Nunca `true`: cualquiera podría falsear su IP y saltarse el límite.
-const trustProxy = Number(process.env.TRUST_PROXY ?? 1);
+// real del cliente de X-Forwarded-For. 0 en DEV (sin proxy), 1 con Nginx (Prod), 3 en Render
+// (medido, ver DEMO.md). Nunca `true`: cualquiera podría falsear su IP y saltarse el límite.
+const trustProxy = Number(process.env.TRUST_PROXY);
 if (!Number.isInteger(trustProxy) || trustProxy < 0) {
   console.error("TRUST_PROXY debe ser un entero >= 0. El servidor no arranca.");
   process.exit(1);
