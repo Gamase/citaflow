@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api/client";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
 import { Field, Input } from "../components/ui/Field";
 import { PlusIcon, UsersIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
@@ -19,6 +20,7 @@ interface Client {
 export default function Clients() {
   const [clients, setClients] = useState<Client[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -28,7 +30,11 @@ export default function Clients() {
   function load() {
     api
       .get("/clients")
-      .then((res) => setClients(res.data))
+      .then((res) => {
+        setClients(res.data);
+        setErrorCarga(null);
+      })
+      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los clientes.")))
       .finally(() => setCargando(false));
   }
 
@@ -136,6 +142,8 @@ export default function Clients() {
       <Card>
         {cargando ? (
           <p className="px-4 py-14 text-center text-sm text-muted">Cargando clientes…</p>
+        ) : errorCarga ? (
+          <ErrorState message={errorCarga} onRetry={load} />
         ) : clients.length === 0 ? (
           <EmptyState
             icon={<UsersIcon className="size-5" />}

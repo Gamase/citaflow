@@ -27,3 +27,19 @@ export function clearSession() {
   localStorage.removeItem("token");
   localStorage.removeItem(KEY);
 }
+
+// A dónde se manda al usuario cuando su sesión ya no sirve; Login muestra el aviso.
+export const LOGIN_EXPIRADA = "/login?expirada=1";
+
+// Revisa el `exp` del JWT leyendo su payload (base64url). No verifica la firma:
+// eso lo hace el backend; aquí solo evitamos entrar al panel con un token ya vencido.
+export function tokenVigente(token: string | null): boolean {
+  if (!token) return false;
+  try {
+    const payload = (token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const { exp } = JSON.parse(atob(payload)) as { exp?: unknown };
+    return typeof exp === "number" && exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}

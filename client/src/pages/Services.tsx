@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api/client";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
 import { Field, Input } from "../components/ui/Field";
 import { PlusIcon, TagIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
@@ -19,6 +20,7 @@ interface Service {
 export default function Services() {
   const [services, setServices] = useState<Service[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [nombre, setNombre] = useState("");
   const [duracionMin, setDuracionMin] = useState("");
@@ -33,7 +35,11 @@ export default function Services() {
   function load() {
     api
       .get("/services")
-      .then((res) => setServices(res.data))
+      .then((res) => {
+        setServices(res.data);
+        setErrorCarga(null);
+      })
+      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los servicios.")))
       .finally(() => setCargando(false));
   }
 
@@ -167,6 +173,8 @@ export default function Services() {
       <Card>
         {cargando ? (
           <p className="px-4 py-14 text-center text-sm text-muted">Cargando servicios…</p>
+        ) : errorCarga ? (
+          <ErrorState message={errorCarga} onRetry={load} />
         ) : services.length === 0 ? (
           <EmptyState
             icon={<TagIcon className="size-5" />}

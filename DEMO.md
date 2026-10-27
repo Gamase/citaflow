@@ -6,6 +6,8 @@
 
 ## 0. Checklist antes de entrar
 
+- ⚠️ **Volver a correr el seed del entorno de la demo** (`SEED_LABEL=prod` o `staging`, sección 5) si después del último seed se corrió `pruebas.sh` (0.4): el script deja una cita cancelada de prueba.
+
 ### 0.1 Learner Lab + Producción
 
 - Iniciar el Learner Lab (dura ~4 h por sesión): prenderlo **antes** de entrar.
@@ -96,7 +98,11 @@ bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging  # Sta
 bash scripts/pruebas.sh <URL_API_PROD> prod                                # Prod
 ```
 
-- Termina con `Resultado: N/N como se esperaba.` (exit 1 si algo falla). Deja los datos como estaban salvo una cita **cancelada** ~40 días adelante.
+- Termina con `Resultado: N/N como se esperaba.` (exit 1 si algo falla). Deja los datos como estaban salvo una cita **cancelada** ~40 días adelante → volver a sembrar antes de la demo.
+- Variables opcionales:
+  - `ORIGEN_OK=<URL del front>`: también prueba que ese origen sí pase CORS. Ej.: `ORIGEN_OK=https://citaflow-staging-web.onrender.com bash scripts/pruebas.sh https://citaflow-staging-api.onrender.com staging`.
+  - `PROBAR_429=1`: al final fuerza el 429 del login. **Bloquea tu IP 15 min** para login fallido (y en la escuela comparten IP): solo en local.
+- Cuenta 2 logins fallidos por corrida; el límite es 10 cada 15 min por IP, así que caben ~5 corridas seguidas.
 
 ---
 
@@ -324,6 +330,7 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ~/citaflow/scripts/deploy-prod.sh
 ```
 
+- ⚠️ **Antes de desplegar**: el `server/.env` de la EC2 necesita `CORS_ORIGIN="http://3.222.23.172"`; sin ella la API no arranca.
 - ⚠️ **Al montar la EC2 (o en la primera promoción después del cambio de contraseñas)** hay que correr el seed de Prod para que las cuentas usen `12345678` (sección 5). Borra y vuelve a sembrar la BD de Prod:
 
 ```bash

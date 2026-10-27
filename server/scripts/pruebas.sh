@@ -7,6 +7,11 @@
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
 # así que la BD tiene que tener ese seed. Deja los datos como estaban, salvo una cita
 # CANCELADA ~40 días adelante (nada se borra en CitaFlow).
+#
+# Variables opcionales:
+#   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
+#   PROBAR_429=1               al final fuerza el rate limit del login (429). Deja tu IP
+#                              bloqueada 15 min para login fallido: úsalo solo en local.
 
 set -u
 API=${1:-}
@@ -38,6 +43,24 @@ TOTAL=0
 
 # Lee un campo del último JSON recibido (o de stdin con "-").
 campo() { node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1]==="-"?0:process.argv[1])); const v=process.argv[2].split(".").reduce((o,k)=>o?.[k],d); console.log(v ?? "")' "$1" "$2"; }
+
+# h "descripción" sí|no "Encabezado" MÉTODO /ruta [Origin] [encabezado extra] [body JSON]
+# Revisa si la respuesta trae (sí) o no (no) cierto encabezado.
+h() {
+  local desc=$1 debe=$2 header=$3 met=$4 ruta=$5 origen=${6:-} extra=${7:-} body=${8:-}
+  local args=(-s -m 90 -o /dev/null -D - -X "$met" "$API$ruta")
+  [ -n "$origen" ] && args+=(-H "Origin: $origen")
+  [ -n "$extra" ] && args+=(-H "$extra")
+  [ -n "$body" ] && args+=(-H "$J" --data-raw "$body")
+  local valor
+  valor=$(curl "${args[@]}" | tr -d '\r' | grep -i "^$header:" | head -1)
+  TOTAL=$((TOTAL + 1))
+  local ok="✅"
+  if { [ "$debe" = "sí" ] && [ -z "$valor" ]; } || { [ "$debe" = "no" ] && [ -n "$valor" ]; }; then
+    ok="❌"; FALLAS=$((FALLAS + 1))
+  fi
+  printf "%s %-40s debe traerlo: %-2s  %s\n" "$ok" "$desc" "$debe" "${valor:-(sin $header)}"
+}
 
 # t "descripción" esperado MÉTODO /ruta [token] [body]
 t() {
@@ -74,6 +97,21 @@ FUT=$(node -p 'const d=new Date(Date.now()+40*864e5); d.setUTCHours(3,11,0,0); d
 TEL="55$(printf %08d $((RANDOM * 1000 + RANDOM % 1000)))"
 
 echo "API: $API  |  entorno: $LABEL  |  A: $A_EMAIL  |  B: $B_EMAIL"
+
+MALO=https://origen-no-permitido.invalid
+echo "== Encabezados de seguridad (helmet) y CORS"
+h "sin X-Powered-By"                 no X-Powered-By GET /health
+h "X-Content-Type-Options"           sí X-Content-Type-Options GET /health
+h "CORS: origen no permitido"        no Access-Control-Allow-Origin GET /health "$MALO"
+h "CORS: preflight no permitido"     no Access-Control-Allow-Origin OPTIONS /auth/login "$MALO" "Access-Control-Request-Method: POST"
+if [ -n "${ORIGEN_OK:-}" ]; then
+  h "CORS: origen permitido"         sí Access-Control-Allow-Origin GET /health "$ORIGEN_OK"
+  h "CORS: preflight permitido"      sí Access-Control-Allow-Origin OPTIONS /auth/login "$ORIGEN_OK" "Access-Control-Request-Method: POST"
+fi
+# Con login correcto: no suma al contador de intentos fallidos.
+h "login con rate limit"             sí RateLimit-Policy POST /auth/login "" "" "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}"
+h "register con rate limit"          sí RateLimit-Policy POST /auth/register
+h "rutas de datos sin rate limit"    no RateLimit-Policy GET /services "" "Authorization: Bearer $TA"
 
 echo "== Auth"
 t "login sin body"                 400 POST /auth/login
@@ -124,6 +162,16 @@ t "PATCH estado sin body"          400 PATCH "/appointments/$CITA/estado" "$TA"
 t "PATCH Atendida en cita futura"  409 PATCH "/appointments/$CITA/estado" "$TA" '{"estado":"COMPLETADA"}'
 t "PATCH estado de cita ajena"     404 PATCH "/appointments/$CITA/estado" "$TB" '{"estado":"CONFIRMADA"}'
 t "PATCH Cancelar"                 200 PATCH "/appointments/$CITA/estado" "$TA" '{"estado":"CANCELADA"}'
+
+if [ "${PROBAR_429:-}" = "1" ]; then
+  echo "== Rate limit (PROBAR_429=1)"
+  for i in $(seq 1 12); do
+    code=$(curl -s -m 90 -o "$RESP" -w "%{http_code}" -X POST "$API/auth/login" -H "$J" -d "{\"email\":\"$A_EMAIL\",\"password\":\"incorrecta\"}")
+    [ "$code" = "429" ] && break
+  done
+  t "login fallido repetido → 429"   429 POST /auth/login "" "{\"email\":\"$A_EMAIL\",\"password\":\"incorrecta\"}"
+  t "login correcto también bloqueado" 429 POST /auth/login "" "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}"
+fi
 
 echo
 echo "Resultado: $((TOTAL - FALLAS))/$TOTAL como se esperaba."

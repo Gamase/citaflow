@@ -5,10 +5,18 @@ import DashboardLayout from "./components/DashboardLayout";
 import Services from "./pages/Services";
 import Clients from "./pages/Clients";
 import Appointments from "./pages/Appointments";
+import { clearSession, LOGIN_EXPIRADA, tokenVigente } from "./lib/session";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("token");
-  return token ? <>{children}</> : <Navigate to="/login" />;
+  if (!token) {
+    return <Navigate to="/login" />;
+  }
+  if (!tokenVigente(token)) {
+    clearSession();
+    return <Navigate to={LOGIN_EXPIRADA} />;
+  }
+  return <>{children}</>;
 }
 
 function App() {

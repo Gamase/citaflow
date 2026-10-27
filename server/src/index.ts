@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import authRoutes from "./routes/auth";
 import serviceRoutes from "./routes/services";
 import clientRoutes from "./routes/clients";
@@ -14,18 +15,30 @@ try {
   // Sin .env: se usan solo las variables del entorno.
 }
 
-// Sin estas dos el server no tiene sentido: no arranca.
-for (const variable of ["JWT_SECRET", "DATABASE_URL"]) {
+// Sin estas el server no tiene sentido: no arranca.
+for (const variable of ["JWT_SECRET", "DATABASE_URL", "CORS_ORIGIN"]) {
   if (!process.env[variable]) {
     console.error(`Falta la variable de entorno ${variable}. El servidor no arranca.`);
     process.exit(1);
   }
 }
 
+// Orígenes del front que pueden llamar a la API, separados por coma.
+const origenesPermitidos = (process.env.CORS_ORIGIN as string)
+  .split(",")
+  .map((origen) => origen.trim())
+  .filter(Boolean);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Delante hay exactamente un proxy (balanceador de Render o Nginx): la IP real del
+// cliente es la que ese proxy agrega a X-Forwarded-For. Con `true` cualquiera podría
+// falsearla y saltarse el rate limit.
+app.set("trust proxy", 1);
+
+app.use(helmet());
+app.use(cors({ origin: origenesPermitidos }));
 app.use(express.json());
 
 app.get("/health", (req, res) => {

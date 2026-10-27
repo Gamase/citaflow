@@ -4,6 +4,7 @@ import api from "../api/client";
 import Badge, { type BadgeTone } from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
 import { Field, Input, Select } from "../components/ui/Field";
 import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
@@ -87,6 +88,7 @@ export default function Appointments() {
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [clientId, setClientId] = useState("");
   const [serviceId, setServiceId] = useState("");
@@ -98,10 +100,20 @@ export default function Appointments() {
   function load() {
     api
       .get("/appointments")
-      .then((res) => setAppointments(res.data))
+      .then((res) => {
+        setAppointments(res.data);
+        setErrorCarga(null);
+      })
+      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar las citas.")))
       .finally(() => setCargando(false));
-    api.get("/clients").then((res) => setClients(res.data));
-    api.get("/services").then((res) => setServices(res.data));
+    api
+      .get("/clients")
+      .then((res) => setClients(res.data))
+      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los clientes.")));
+    api
+      .get("/services")
+      .then((res) => setServices(res.data))
+      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los servicios.")));
   }
 
   useEffect(load, []);
@@ -231,6 +243,8 @@ export default function Appointments() {
       <Card>
         {cargando ? (
           <p className="px-4 py-14 text-center text-sm text-muted">Cargando citas…</p>
+        ) : errorCarga ? (
+          <ErrorState message={errorCarga} onRetry={load} />
         ) : appointments.length === 0 ? (
           <EmptyState
             icon={<CalendarIcon className="size-5" />}
