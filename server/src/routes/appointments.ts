@@ -54,6 +54,14 @@ router.post("/", async (req, res) => {
     return res.status(404).json({ error: "Servicio no encontrado" });
   }
 
+  const client = await prisma.client.findFirst({
+    where: { id: clientId, tenantId: req.tenantId as string },
+  });
+
+  if (!client) {
+    return res.status(404).json({ error: "Cliente no encontrado" });
+  }
+
   const inicio = new Date(fechaHora);
   const fin = new Date(inicio.getTime() + service.duracionMin * 60000);
 

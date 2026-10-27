@@ -5,7 +5,7 @@ import { saveSession } from "../lib/session";
 import AuthLayout from "../components/AuthLayout";
 import Button from "../components/ui/Button";
 import { Field, Input } from "../components/ui/Field";
-import { useToast } from "../components/ui/useToast";
+import { apiError, useToast } from "../components/ui/useToast";
 
 export default function Register() {
   const [nombreNegocio, setNombreNegocio] = useState("");
@@ -29,8 +29,8 @@ export default function Register() {
       localStorage.setItem("token", res.data.token);
       saveSession(res.data);
       navigate("/dashboard");
-    } catch {
-      toast.error("No se pudo registrar. Revisa los datos.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo registrar. Revisa los datos."));
     } finally {
       setEnviando(false);
     }
