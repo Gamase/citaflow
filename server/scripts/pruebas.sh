@@ -5,8 +5,8 @@
 #   (ejemplos por entorno en DEMO.md, sección 0.4)
 #
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
-# así que la BD tiene que tener ese seed, y de los últimos 15 días (el resumen del
-# dashboard se compara contra las citas que sembró). Deja los datos como estaban, salvo dos citas
+# así que la BD tiene que tener ese seed, de hoy o de ayer (el resumen del dashboard se
+# compara contra las citas que sembró, que van de -14 a +7 días). Deja los datos como estaban, salvo dos citas
 # CANCELADAS ~40 días adelante (nada se borra en CitaFlow).
 #
 # Variables opcionales:
@@ -183,28 +183,30 @@ else
 fi
 
 echo "== Dashboard"
-# Rango de ±15 días: cubre las citas del seed (de -2 a +2 días) y deja fuera las que crea
-# este script (+40 días). Se usa para "hoy" y para "mes" a la vez.
+# Rango de ±16 días (32, el máximo que acepta la API): cubre las citas del seed (de -14 a
+# +7 días) aunque se haya sembrado ayer, y deja fuera las que crea este script (+40 días).
+# Se usa para "hoy" y para "mes" a la vez.
 rango() { node -p "const n=Date.now(), d=864e5; const a=new Date(n-($1)*d).toISOString(), b=new Date(n+($2)*d).toISOString();
   'hoyDesde='+a+'&hoyHasta='+b+'&mesDesde='+a+'&mesHasta='+b"; }
-Q_OK=$(rango 15 15)
+Q_OK=$(rango 16 16)
 t "resumen sin token"              401 GET "/dashboard/resumen?$Q_OK"
 t "resumen rango al revés"         400 GET "/dashboard/resumen?$(rango -15 -16)" "$TA"
 t "resumen rango de 40 días"       400 GET "/dashboard/resumen?$(rango 20 20)" "$TA"
 t "resumen fecha inválida"         400 GET "/dashboard/resumen?hoyDesde=no-es-fecha&hoyHasta=x&mesDesde=x&mesHasta=x" "$TA"
 t "resumen sin parámetros"         400 GET "/dashboard/resumen" "$TA"
 
-# Lo que sembró el seed para cada negocio: clientes, servicios, precios y citas por estado.
+# Lo que sembró el seed para cada negocio, calculado de prisma/seed-data.ts (sin números
+# fijos): clientes, servicios, citas por estado e ingresos (precio de cada Atendida).
 ESPERADO=$(npx --no-install tsx -e "
-  import { CITAS_DEMO, DATASETS } from './prisma/seed-data';
-  const porEstado: Record<string, number> = {};
-  for (const c of CITAS_DEMO) porEstado[c.estado] = (porEstado[c.estado] ?? 0) + 1;
-  console.log(JSON.stringify(DATASETS['$LABEL']!.tenants.slice(0, 2).map((t) => ({
-    clientes: t.clientes.length,
-    servicios: t.servicios.length,
-    precios: t.servicios.map((s) => s.precio),
-    porEstado: t.clientes.length > 0 && t.servicios.length > 0 ? porEstado : {},
-  }))));
+  import { DATASETS } from './prisma/seed-data';
+  console.log(JSON.stringify(DATASETS['$LABEL']!.tenants.slice(0, 2).map((t) => {
+    const porEstado: Record<string, number> = {};
+    for (const c of t.citas) porEstado[c.estado] = (porEstado[c.estado] ?? 0) + 1;
+    const ingresos = t.citas
+      .filter((c) => c.estado === 'COMPLETADA')
+      .reduce((suma, c) => suma + t.servicios[c.servicio]!.precio, 0);
+    return { clientes: t.clientes.length, servicios: t.servicios.length, porEstado, ingresos };
+  })));
 " 2>/dev/null)
 
 # aislamiento "negocio" índice  → compara el último resumen recibido contra el seed de ese negocio.
@@ -214,7 +216,7 @@ aislamiento() {
     const fs = require("fs");
     const [archivo, esperado, i, nombre] = process.argv.slice(1);
     const r = JSON.parse(fs.readFileSync(archivo)), e = JSON.parse(esperado)[Number(i)];
-    const pista = " → ¿El seed tiene más de 15 días? Corre el seed de este entorno y vuelve a intentar";
+    const pista = " → ¿El seed no es de hoy o de ayer? Corre el seed de este entorno y vuelve a intentar";
     const linea = (ok, desc, detalle) => console.log((ok ? "✅ " : "❌ ") + desc.padEnd(40) + " " + detalle);
     const ESTADOS = ["PENDIENTE", "CONFIRMADA", "COMPLETADA", "NO_ASISTIO", "CANCELADA"];
     const esp = Object.fromEntries(ESTADOS.map((s) => [s, e.porEstado[s] ?? 0]));
@@ -229,9 +231,8 @@ aislamiento() {
     const tasa = resueltas === 0 ? null : esp.NO_ASISTIO / resueltas;
     linea(r.mes.tasaNoAsistencia === tasa, nombre + ": tasa de no asistencia",
       String(r.mes.tasaNoAsistencia) + (r.mes.tasaNoAsistencia === tasa ? "" : " (esperado " + tasa + ")" + pista));
-    const okIngresos = esp.COMPLETADA === 0 ? r.mes.ingresos === 0
-      : esp.COMPLETADA === 1 ? e.precios.includes(r.mes.ingresos) : r.mes.ingresos > 0;
-    linea(okIngresos, nombre + ": ingresos = precio de una atendida", String(r.mes.ingresos) + (okIngresos ? "" : pista));
+    const okIngresos = Math.abs(r.mes.ingresos - e.ingresos) < 0.005;
+    linea(okIngresos, nombre + ": ingresos = suma de atendidas", String(r.mes.ingresos) + (okIngresos ? "" : " (esperado " + e.ingresos + ")" + pista));
     const ahora = Date.now() - 60e3;
     const okProximas = r.proximas.length <= 5 && r.proximas.every((c, j, a) =>
       new Date(c.fechaHora).getTime() >= ahora && ["PENDIENTE", "CONFIRMADA"].includes(c.estado) &&
