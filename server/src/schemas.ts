@@ -81,6 +81,33 @@ export const estadoSchema = z.object({
   estado: z.enum(EstadoCita, { error: "Estado no válido" }),
 });
 
+// --- Dashboard ---
+
+// Un mes más margen por el cambio de horario (Tijuana sí lo tiene).
+const MAX_RANGO_MS = 32 * 24 * 60 * 60 * 1000;
+
+const fecha = (campo: string) =>
+  z
+    .string({ error: `Falta ${campo}` })
+    .pipe(z.coerce.date({ error: `${campo} no es una fecha válida` }));
+
+// Los rangos los calcula el front con su hora local: el server está en UTC y no sabe
+// cuándo empieza "hoy" para el negocio.
+export const resumenSchema = z
+  .object({
+    hoyDesde: fecha("hoyDesde"),
+    hoyHasta: fecha("hoyHasta"),
+    mesDesde: fecha("mesDesde"),
+    mesHasta: fecha("mesHasta"),
+  })
+  .refine((q) => q.hoyDesde < q.hoyHasta && q.mesDesde < q.mesHasta, "El inicio del rango debe ser antes del fin")
+  .refine(
+    (q) =>
+      q.hoyHasta.getTime() - q.hoyDesde.getTime() <= MAX_RANGO_MS &&
+      q.mesHasta.getTime() - q.mesDesde.getTime() <= MAX_RANGO_MS,
+    "El rango no puede ser mayor a 32 días",
+  );
+
 export type RegistroInput = z.infer<typeof registroSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ServicioInput = z.infer<typeof servicioSchema>;
@@ -90,3 +117,4 @@ export type EditarClienteInput = z.infer<typeof editarClienteSchema>;
 export type CitaInput = z.infer<typeof citaSchema>;
 export type ReagendarInput = z.infer<typeof reagendarSchema>;
 export type EstadoInput = z.infer<typeof estadoSchema>;
+export type ResumenInput = z.infer<typeof resumenSchema>;

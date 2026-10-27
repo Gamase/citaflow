@@ -6,7 +6,7 @@
 
 ## 0. Checklist antes de entrar
 
-- ⚠️ **Volver a correr el seed del entorno de la demo** (`SEED_LABEL=prod` o `staging`, sección 5) si después del último seed se corrió `pruebas.sh` (0.4): el script deja citas canceladas de prueba.
+- ⚠️ **Correr el seed del entorno de la demo EL MISMO DÍA de la demo** (`SEED_LABEL=prod` o `staging`, sección 5). Las fechas de las citas se calculan al sembrar (en hora de Tijuana): la cita Confirmada de **hoy a las 18:00** que llena "Hoy" en el Resumen solo es "hoy" el día en que se sembró. También limpia las citas canceladas que deja `pruebas.sh` (0.4).
 
 ### 0.1 Learner Lab + Producción
 
@@ -279,6 +279,17 @@ curl -i $API/appointments -H "Authorization: Bearer <TOKEN_BARBERIA>x"
 - **Ya pasó en el proyecto**: `POST /appointments` validaba que el `serviceId` fuera del tenant, pero el `clientId` se guardaba tal cual venía en el body. Con un token de Bella Vista se podía agendar una cita a un cliente de MotorPro.
   - Cómo se detectó: revisando ruta por ruta contra la regla de "toda query filtra por `tenantId`, incluidas validaciones".
   - Cómo se corrigió: `findFirst({ where: { id: clientId, tenantId } })` antes del `create`; si no es del tenant → 404 "Cliente no encontrado", igual que con el servicio. Se probó en Staging con curl (token de un negocio + cliente del otro → 404).
+
+### ¿Los ingresos del dashboard son exactos?
+
+- Suman el precio de las citas **atendidas** del mes, pero con el precio **actual** del servicio: no se guarda el precio al momento de la cita.
+- Si cambias el precio de un servicio, cambian también los ingresos de meses pasados. Limitación conocida.
+- Arreglo a futuro: guardar `precio` en la cita al marcarla atendida (una columna más en `Appointment`).
+
+### ¿Por qué el dashboard recibe las fechas del front?
+
+- "Hoy" y "este mes" dependen de la zona horaria del negocio; el server corre en UTC (Render, EC2). El navegador calcula el inicio y fin del día y del mes en su hora local y los manda; el server valida (fechas válidas, inicio < fin, máximo 32 días) y filtra por `tenantId`.
+- "Próximas citas" sí usa la hora del server: "ahora" es un instante, no depende de la zona.
 
 ### ¿Por qué el email es único global?
 

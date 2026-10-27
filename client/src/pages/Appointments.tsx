@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/client";
-import Badge, { type BadgeTone } from "../components/ui/Badge";
+import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
@@ -10,6 +10,7 @@ import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
+import { estados, type Estado } from "../lib/estados";
 import { formatDatetimeLocal, formatFecha, formatHora } from "../lib/format";
 
 interface Client {
@@ -30,18 +31,8 @@ interface Appointment {
   service: Service;
 }
 
-type Estado = "PENDIENTE" | "CONFIRMADA" | "COMPLETADA" | "NO_ASISTIO" | "CANCELADA";
 // Estados a los que se puede llegar con una acción (a PENDIENTE nunca se vuelve)
 type Destino = Exclude<Estado, "PENDIENTE">;
-
-// Presentación de cada valor del enum EstadoCita
-const estados: Record<string, { label: string; tone: BadgeTone }> = {
-  PENDIENTE: { label: "Pendiente", tone: "amber" },
-  CONFIRMADA: { label: "Confirmada", tone: "teal" },
-  COMPLETADA: { label: "Atendida", tone: "ink" },
-  NO_ASISTIO: { label: "No asistió", tone: "danger" },
-  CANCELADA: { label: "Cancelada", tone: "neutral" },
-};
 
 // Acciones que ofrece cada estado. Refleja las transiciones del backend,
 // que es quien las valida (409 si no se permite).

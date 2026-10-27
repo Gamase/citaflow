@@ -1,5 +1,7 @@
-// Negocios y cuentas de prueba de cada entorno. Lo usan el seed (prisma/seed.ts)
+// Negocios, cuentas y citas de prueba de cada entorno. Lo usan el seed (prisma/seed.ts)
 // y el script de pruebas (scripts/pruebas.sh). Solo datos: importarlo no toca la BD.
+
+import type { EstadoCita } from "@prisma/client";
 
 export interface Dataset {
   tenants: {
@@ -100,3 +102,20 @@ export const DATASETS: Record<string, Dataset> = {
     ],
   },
 };
+
+// Una cita por estado. COMPLETADA y NO_ASISTIO siempre en el pasado (solo se
+// permiten una vez que la cita empezó). La CONFIRMADA de ayer queda abierta para
+// mostrar en la demo "Marcar atendida" / "No asistió". La CANCELADA y una PENDIENTE
+// comparten horario a propósito: muestran que cancelar (o NO_ASISTIO) libera el espacio.
+// La CONFIRMADA de hoy a las 18:00 llena "Hoy" en el Resumen; si el seed corre después de
+// esa hora queda en el pasado, y está bien. Por eso el seed se corre el mismo día de la demo.
+export const CITAS_DEMO: { estado: EstadoCita; dias: number; hora: number }[] = [
+  { estado: "COMPLETADA", dias: -2, hora: 10 },
+  { estado: "NO_ASISTIO", dias: -1, hora: 12 },
+  { estado: "CONFIRMADA", dias: -1, hora: 16 },
+  { estado: "CONFIRMADA", dias: 0, hora: 18 },
+  { estado: "CANCELADA", dias: 1, hora: 10 },
+  { estado: "PENDIENTE", dias: 1, hora: 10 },
+  { estado: "PENDIENTE", dias: 1, hora: 16 },
+  { estado: "CONFIRMADA", dias: 2, hora: 11 },
+];

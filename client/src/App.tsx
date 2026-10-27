@@ -5,6 +5,7 @@ import DashboardLayout from "./components/DashboardLayout";
 import Services from "./pages/Services";
 import Clients from "./pages/Clients";
 import Appointments from "./pages/Appointments";
+import Resumen from "./pages/Resumen";
 import { clearSession, LOGIN_EXPIRADA, tokenVigente } from "./lib/session";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,7 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="services" />} />
+          <Route index element={<Resumen />} />
           <Route path="services" element={<Services />} />
           <Route path="clients" element={<Clients />} />
           <Route path="appointments" element={<Appointments />} />

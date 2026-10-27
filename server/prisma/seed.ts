@@ -1,33 +1,33 @@
-import { EstadoCita, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { DATASETS } from "./seed-data";
+import { CITAS_DEMO, DATASETS } from "./seed-data";
 
 const prisma = new PrismaClient();
 
-// Fecha a N días de hoy, a la hora indicada en horario de Tijuana (UTC-7).
-// Se fija la zona para que las citas caigan en horario laboral aunque el seed
-// corra en un servidor en UTC (Render, EC2).
-function fechaTijuana(dias: number, hora: number, minuto = 0): Date {
-  const hoy = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const base = new Date(`${hoy}T00:00:00-07:00`);
-  base.setUTCDate(base.getUTCDate() + dias);
-  base.setUTCHours(hora + 7, minuto, 0, 0);
-  return base;
+// Las citas del seed se calculan en la hora de Tijuana de forma explícita, sin depender
+// de la zona del sistema: el seed corre en servidores en UTC (Render, EC2).
+// Tijuana cambia de horario (UTC-7 en verano, UTC-8 en invierno): el desfase se pide a Intl.
+const ZONA = "America/Tijuana";
+
+// Desfase de Tijuana respecto a UTC, en minutos, en un instante dado (-420 o -480).
+function desfaseTijuana(instante: Date): number {
+  const nombre = new Intl.DateTimeFormat("en-US", { timeZone: ZONA, timeZoneName: "longOffset" })
+    .formatToParts(instante)
+    .find((p) => p.type === "timeZoneName")?.value; // "GMT-07:00"
+  const m = /GMT([+-])(\d{2}):(\d{2})/.exec(nombre ?? "");
+  return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
 }
 
-// Una cita por estado. COMPLETADA y NO_ASISTIO siempre en el pasado (solo se
-// permiten una vez que la cita empezó). La CONFIRMADA de ayer queda abierta para
-// mostrar en la demo "Marcar atendida" / "No asistió". La CANCELADA y una PENDIENTE
-// comparten horario a propósito: muestran que cancelar (o NO_ASISTIO) libera el espacio.
-const CITAS_DEMO: { estado: EstadoCita; dias: number; hora: number }[] = [
-  { estado: "COMPLETADA", dias: -2, hora: 10 },
-  { estado: "NO_ASISTIO", dias: -1, hora: 12 },
-  { estado: "CONFIRMADA", dias: -1, hora: 16 },
-  { estado: "CANCELADA", dias: 1, hora: 10 },
-  { estado: "PENDIENTE", dias: 1, hora: 10 },
-  { estado: "PENDIENTE", dias: 1, hora: 16 },
-  { estado: "CONFIRMADA", dias: 2, hora: 11 },
-];
+// Fecha a N días de hoy (el "hoy" de Tijuana), a la hora indicada en hora de Tijuana.
+function fechaTijuana(dias: number, hora: number, minuto = 0): Date {
+  const [y, mes, dia] = new Intl.DateTimeFormat("en-CA", { timeZone: ZONA })
+    .format(new Date()) // "2026-10-27"
+    .split("-")
+    .map(Number);
+  // La hora de Tijuana escrita "como si fuera UTC", menos el desfase de ese día = el instante real.
+  const comoUtc = Date.UTC(y!, mes! - 1, dia! + dias, hora, minuto);
+  return new Date(comoUtc - desfaseTijuana(new Date(comoUtc)) * 60000);
+}
 
 async function main() {
   const label = process.env.SEED_LABEL || "dev";

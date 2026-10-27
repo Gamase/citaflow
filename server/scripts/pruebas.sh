@@ -5,7 +5,8 @@
 #   (ejemplos por entorno en DEMO.md, sección 0.4)
 #
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
-# así que la BD tiene que tener ese seed. Deja los datos como estaban, salvo dos citas
+# así que la BD tiene que tener ese seed, y de los últimos 15 días (el resumen del
+# dashboard se compara contra las citas que sembró). Deja los datos como estaban, salvo dos citas
 # CANCELADAS ~40 días adelante (nada se borra en CitaFlow).
 #
 # Variables opcionales:
@@ -157,6 +158,71 @@ t "register password de 6"         400 POST /auth/register "" '{"nombreNegocio":
 t "register email inválido"        400 POST /auth/register "" '{"nombreNegocio":"X","nombreUsuario":"X","email":"no-es-email","password":"12345678"}'
 t "register nombre negocio vacío"  400 POST /auth/register "" '{"nombreNegocio":"   ","nombreUsuario":"X","email":"x@x.com","password":"12345678"}'
 t "register email repetido"        409 POST /auth/register "" "{\"nombreNegocio\":\"X\",\"nombreUsuario\":\"X\",\"email\":\"$A_EMAIL\",\"password\":\"12345678\"}"
+
+echo "== Dashboard"
+# Rango de ±15 días: cubre las citas del seed (de -2 a +2 días) y deja fuera las que crea
+# este script (+40 días). Se usa para "hoy" y para "mes" a la vez.
+rango() { node -p "const n=Date.now(), d=864e5; const a=new Date(n-($1)*d).toISOString(), b=new Date(n+($2)*d).toISOString();
+  'hoyDesde='+a+'&hoyHasta='+b+'&mesDesde='+a+'&mesHasta='+b"; }
+Q_OK=$(rango 15 15)
+t "resumen sin token"              401 GET "/dashboard/resumen?$Q_OK"
+t "resumen rango al revés"         400 GET "/dashboard/resumen?$(rango -15 -16)" "$TA"
+t "resumen rango de 40 días"       400 GET "/dashboard/resumen?$(rango 20 20)" "$TA"
+t "resumen fecha inválida"         400 GET "/dashboard/resumen?hoyDesde=no-es-fecha&hoyHasta=x&mesDesde=x&mesHasta=x" "$TA"
+t "resumen sin parámetros"         400 GET "/dashboard/resumen" "$TA"
+
+# Lo que sembró el seed para cada negocio: clientes, servicios, precios y citas por estado.
+ESPERADO=$(npx --no-install tsx -e "
+  import { CITAS_DEMO, DATASETS } from './prisma/seed-data';
+  const porEstado: Record<string, number> = {};
+  for (const c of CITAS_DEMO) porEstado[c.estado] = (porEstado[c.estado] ?? 0) + 1;
+  console.log(JSON.stringify(DATASETS['$LABEL']!.tenants.slice(0, 2).map((t) => ({
+    clientes: t.clientes.length,
+    servicios: t.servicios.length,
+    precios: t.servicios.map((s) => s.precio),
+    porEstado: t.clientes.length > 0 && t.servicios.length > 0 ? porEstado : {},
+  }))));
+" 2>/dev/null)
+
+# aislamiento "negocio" índice  → compara el último resumen recibido contra el seed de ese negocio.
+aislamiento() {
+  local salida
+  salida=$(node -e '
+    const fs = require("fs");
+    const [archivo, esperado, i, nombre] = process.argv.slice(1);
+    const r = JSON.parse(fs.readFileSync(archivo)), e = JSON.parse(esperado)[Number(i)];
+    const pista = " → ¿El seed tiene más de 15 días? Corre el seed de este entorno y vuelve a intentar";
+    const linea = (ok, desc, detalle) => console.log((ok ? "✅ " : "❌ ") + desc.padEnd(40) + " " + detalle);
+    const ESTADOS = ["PENDIENTE", "CONFIRMADA", "COMPLETADA", "NO_ASISTIO", "CANCELADA"];
+    const esp = Object.fromEntries(ESTADOS.map((s) => [s, e.porEstado[s] ?? 0]));
+    const total = ESTADOS.reduce((a, s) => a + esp[s], 0);
+    const okEstados = ESTADOS.every((s) => r.mes.porEstado[s] === esp[s]) && r.hoy.length === total;
+    linea(okEstados, nombre + ": citas = las del seed",
+      okEstados ? total + " citas" : "esperado " + JSON.stringify(esp) + ", obtenido " + JSON.stringify(r.mes.porEstado) + pista);
+    const okTotales = r.totales.clientes === e.clientes && r.totales.servicios === e.servicios;
+    linea(okTotales, nombre + ": clientes y servicios = seed",
+      r.totales.clientes + " / " + r.totales.servicios + (okTotales ? "" : " (esperado " + e.clientes + " / " + e.servicios + "). ¿Se agregaron datos a mano? Corre el seed"));
+    const resueltas = esp.COMPLETADA + esp.NO_ASISTIO;
+    const tasa = resueltas === 0 ? null : esp.NO_ASISTIO / resueltas;
+    linea(r.mes.tasaNoAsistencia === tasa, nombre + ": tasa de no asistencia",
+      String(r.mes.tasaNoAsistencia) + (r.mes.tasaNoAsistencia === tasa ? "" : " (esperado " + tasa + ")" + pista));
+    const okIngresos = esp.COMPLETADA === 0 ? r.mes.ingresos === 0
+      : esp.COMPLETADA === 1 ? e.precios.includes(r.mes.ingresos) : r.mes.ingresos > 0;
+    linea(okIngresos, nombre + ": ingresos = precio de una atendida", String(r.mes.ingresos) + (okIngresos ? "" : pista));
+    const ahora = Date.now() - 60e3;
+    const okProximas = r.proximas.length <= 5 && r.proximas.every((c, j, a) =>
+      new Date(c.fechaHora).getTime() >= ahora && ["PENDIENTE", "CONFIRMADA"].includes(c.estado) &&
+      (j === 0 || a[j - 1].fechaHora <= c.fechaHora));
+    linea(okProximas, nombre + ": próximas (futuras, activas, en orden)", r.proximas.length + " citas");
+  ' "$RESP" "$ESPERADO" "$2" "$1")
+  echo "$salida"
+  TOTAL=$((TOTAL + $(grep -c . <<< "$salida")))
+  FALLAS=$((FALLAS + $(grep -c "^❌" <<< "$salida")))
+}
+t "resumen negocio A"              200 GET "/dashboard/resumen?$Q_OK" "$TA"
+aislamiento "A" 0
+t "resumen negocio B"              200 GET "/dashboard/resumen?$Q_OK" "$TB"
+aislamiento "B" 1
 
 echo "== Services"
 t "POST sin nombre"                400 POST /services "$TA" '{"duracionMin":30,"precio":100}'

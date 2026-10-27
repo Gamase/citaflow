@@ -19,6 +19,13 @@ function Svg({ className = "size-4", children }: IconProps & { children: React.R
   );
 }
 
+export const ChartIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 20h16" />
+    <path d="M7 16v-5M12 16V6M17 16v-8" />
+  </Svg>
+);
+
 export const TagIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9Z" />
