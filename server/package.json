@@ -8,7 +8,9 @@
     "postinstall": "prisma skills sync || exit 0",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "db:migrate": "bash scripts/como-admin.sh prisma migrate dev",
+    "db:seed": "bash scripts/como-admin.sh tsx prisma/seed.ts"
   },
   "keywords": [],
   "type": "commonjs",

@@ -1,13 +1,13 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import { prisma } from "../db";
 import { firmarToken } from "../middleware/auth";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { validar } from "../middleware/validar";
 import { limiteLogin, limiteRegistro } from "../middleware/limites";
 import { loginSchema, registroSchema, LoginInput, RegistroInput } from "../schemas";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.post("/register", limiteRegistro, validar(registroSchema), async (req, res) => {
   const { nombreNegocio, email, password, nombreUsuario } = req.body as RegistroInput;

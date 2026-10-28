@@ -1,6 +1,7 @@
 import { Router, RequestHandler, Response } from "express";
 import bcrypt from "bcryptjs";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { ClienteTenant } from "../db";
 import { firmarToken, segundoActual, verificarToken } from "../middleware/auth";
 import { limiteContrasena } from "../middleware/limites";
 import { validar } from "../middleware/validar";
@@ -8,7 +9,6 @@ import { miCuentaSchema, miPasswordSchema, MiCuentaInput, MiPasswordInput } from
 
 // Ajustes de la cuenta de quien hace la petición (dueño o empleado): siempre sobre sí mismo.
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(verificarToken);
 
@@ -19,8 +19,8 @@ const MI_CUENTA = {
   tenant: { select: { id: true, nombre: true } },
 } satisfies Prisma.UserSelect;
 
-async function yo(userId: string, tenantId: string) {
-  return prisma.user.findFirst({ where: { id: userId, tenantId } });
+async function yo(db: ClienteTenant, userId: string, tenantId: string) {
+  return db.user.findFirst({ where: { id: userId, tenantId } });
 }
 
 // Revisa la contraseña actual. Si no coincide responde 400 (no 401: el front trata un 401
@@ -33,7 +33,7 @@ async function passwordActualValida(actual: string, hash: string, res: Response)
 }
 
 router.get("/", async (req, res) => {
-  const user = await prisma.user.findFirst({
+  const user = await req.db.user.findFirst({
     where: { id: req.userId as string, tenantId: req.tenantId as string },
     select: MI_CUENTA,
   });
@@ -49,7 +49,7 @@ const limiteSiCambiaEmail: RequestHandler<Record<string, string>> = (req, res, n
 
 router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res) => {
   const { nombre, email, passwordActual } = req.body as MiCuentaInput;
-  const user = await yo(req.userId as string, req.tenantId as string);
+  const user = await yo(req.db, req.userId as string, req.tenantId as string);
   if (!user) {
     return res.status(404).json({ error: "No encontrado" });
   }
@@ -59,7 +59,7 @@ router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res)
   }
 
   try {
-    const actualizado = await prisma.user.update({
+    const actualizado = await req.db.user.update({
       where: { id: user.id, tenantId: user.tenantId },
       data: { nombre, email },
       select: MI_CUENTA,
@@ -78,7 +78,7 @@ router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res)
 // emitidos antes de passwordCambiadaEn. Esta sesión sigue con el token nuevo que se regresa.
 router.patch("/password", validar(miPasswordSchema), limiteContrasena, async (req, res) => {
   const { passwordActual, passwordNueva } = req.body as MiPasswordInput;
-  const user = await yo(req.userId as string, req.tenantId as string);
+  const user = await yo(req.db, req.userId as string, req.tenantId as string);
   if (!user) {
     return res.status(404).json({ error: "No encontrado" });
   }
@@ -89,7 +89,7 @@ router.patch("/password", validar(miPasswordSchema), limiteContrasena, async (re
 
   // El mismo segundo para la marca y para el `iat` del token nuevo.
   const ahora = segundoActual();
-  await prisma.user.update({
+  await req.db.user.update({
     where: { id: user.id, tenantId: user.tenantId },
     data: { password: await bcrypt.hash(passwordNueva, 10), passwordCambiadaEn: ahora },
   });

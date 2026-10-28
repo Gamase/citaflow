@@ -37,68 +37,87 @@ async function main() {
     throw new Error(`Los datos del seed "${label}" no cumplen las reglas:\n  - ${errores.join("\n  - ")}`);
   }
 
-  console.log(`Sembrando dataset "${label}"...`);
-  console.log("Limpiando base de datos...");
-  await prisma.appointment.deleteMany();
-  await prisma.client.deleteMany();
-  await prisma.service.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.tenant.deleteMany();
-
-  const creados: { datos: Negocio; tenant: { id: string } }[] = [];
+  // bcrypt es lento a propósito: los hashes se calculan antes de abrir la transacción.
+  const hashes = new Map<string, string>();
   for (const t of dataset.tenants) {
-    console.log(`Sembrando ${t.nombre}...`);
-    const tenant = await prisma.tenant.create({
-      data: {
-        nombre: t.nombre,
-        users: {
-          create: [
-            {
-              email: t.email,
-              password: await bcrypt.hash(t.password, 10),
-              nombre: t.nombreUsuario,
-              rol: "DUENO",
-            },
-            {
-              email: t.empleado.email,
-              password: await bcrypt.hash(t.empleado.password, 10),
-              nombre: t.empleado.nombre,
-              rol: "EMPLEADO",
-            },
-          ],
-        },
-      },
-    });
-
-    // Uno por uno (no createMany) para conservar el orden y poder usar los índices.
-    const services: { id: string }[] = [];
-    for (const s of t.servicios) {
-      services.push(await prisma.service.create({ data: { ...s, tenantId: tenant.id } }));
-    }
-    const clients: { id: string }[] = [];
-    for (const c of t.clientes) {
-      clients.push(await prisma.client.create({ data: { ...c, tenantId: tenant.id } }));
-    }
-
-    // Quién atiende cada cita: el dueño o el empleado recién creados (o nadie).
-    const usuarios = await prisma.user.findMany({ where: { tenantId: tenant.id } });
-    const idDe = { dueno: usuarios.find((u) => u.rol === "DUENO")!.id, empleado: usuarios.find((u) => u.rol === "EMPLEADO")!.id };
-
-    await prisma.appointment.createMany({
-      data: citasConFecha(t, ahora).map((c) => ({
-        tenantId: tenant.id,
-        clientId: clients[c.cliente]!.id,
-        serviceId: services[c.servicio]!.id,
-        fechaHora: c.fechaHora,
-        estado: c.estado,
-        // Como hace la API al agendar: el precio del servicio queda guardado en la cita.
-        precio: t.servicios[c.servicio]!.precio,
-        atiendeId: c.atiende ? idDe[c.atiende] : null,
-      })),
-    });
-
-    creados.push({ datos: t, tenant });
+    hashes.set(t.email, await bcrypt.hash(t.password, 10));
+    hashes.set(t.empleado.email, await bcrypt.hash(t.empleado.password, 10));
   }
+
+  // Todo en UNA transacción: si algo falla a la mitad, la BD queda como estaba (no a medias).
+  // Empieza con app.bypass_rls: el seed escribe en todos los negocios a la vez, y con RLS
+  // activo las políticas lo dejan pasar solo con esa variable (ver migración de RLS). Es por
+  // convención: ninguna ruta de la API la fija. Timeout amplio: contra Render tarda más que
+  // los 5 s por defecto.
+  const creados: { datos: Negocio; tenant: { id: string } }[] = [];
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`;
+
+      console.log(`Sembrando dataset "${label}"...`);
+      console.log("Limpiando base de datos...");
+      await tx.appointment.deleteMany();
+      await tx.client.deleteMany();
+      await tx.service.deleteMany();
+      await tx.user.deleteMany();
+      await tx.tenant.deleteMany();
+
+        for (const t of dataset.tenants) {
+        console.log(`Sembrando ${t.nombre}...`);
+        const tenant = await tx.tenant.create({
+          data: {
+            nombre: t.nombre,
+            users: {
+              create: [
+                {
+                  email: t.email,
+                  password: hashes.get(t.email)!,
+                  nombre: t.nombreUsuario,
+                  rol: "DUENO",
+                },
+                {
+                  email: t.empleado.email,
+                  password: hashes.get(t.empleado.email)!,
+                  nombre: t.empleado.nombre,
+                  rol: "EMPLEADO",
+                },
+              ],
+            },
+          },
+        });
+
+        // Uno por uno (no createMany) para conservar el orden y poder usar los índices.
+        const services: { id: string }[] = [];
+        for (const s of t.servicios) {
+          services.push(await tx.service.create({ data: { ...s, tenantId: tenant.id } }));
+        }
+        const clients: { id: string }[] = [];
+        for (const c of t.clientes) {
+          clients.push(await tx.client.create({ data: { ...c, tenantId: tenant.id } }));
+        }
+
+        // Quién atiende cada cita: el dueño o el empleado recién creados (o nadie).
+        const usuarios = await tx.user.findMany({ where: { tenantId: tenant.id } });
+        const idDe = { dueno: usuarios.find((u) => u.rol === "DUENO")!.id, empleado: usuarios.find((u) => u.rol === "EMPLEADO")!.id };
+
+        await tx.appointment.createMany({
+          data: citasConFecha(t, ahora).map((c) => ({
+            tenantId: tenant.id,
+            clientId: clients[c.cliente]!.id,
+            serviceId: services[c.servicio]!.id,
+            fechaHora: c.fechaHora,
+            estado: c.estado,
+            // Como hace la API al agendar: el precio del servicio queda guardado en la cita.
+            precio: t.servicios[c.servicio]!.precio,
+            atiendeId: c.atiende ? idDe[c.atiende] : null,
+          })),
+        });
+
+        creados.push({ datos: t, tenant });
+      }
+    },
+    { maxWait: 10_000, timeout: 120_000 },
+  );
 
   console.log(`Listo. Dataset "${label}" sembrado:`);
   for (const t of dataset.tenants) {
@@ -126,10 +145,14 @@ async function imprimirDatosDeDemo(
   );
 
   // Cita de B para el curl de acceso cruzado (con el token de A → 404).
-  const citaB = await prisma.appointment.findFirst({
-    where: { tenantId: b.tenant.id, estado: "CONFIRMADA", fechaHora: { gte: ahora } },
-    orderBy: { fechaHora: "asc" },
-    include: { client: true },
+  // Otra transacción corta con bypass: lee citas de B sin estar "dentro" de ese negocio.
+  const citaB = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`;
+    return tx.appointment.findFirst({
+      where: { tenantId: b.tenant.id, estado: "CONFIRMADA", fechaHora: { gte: ahora } },
+      orderBy: { fechaHora: "asc" },
+      include: { client: true },
+    });
   });
   if (citaB) {
     console.log(`  - Cita de ${b.datos.nombre} para el curl: ${citaB.id}`);

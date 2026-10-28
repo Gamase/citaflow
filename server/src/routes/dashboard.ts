@@ -1,11 +1,10 @@
 import { Router } from "express";
-import { EstadoCita, Prisma, PrismaClient } from "@prisma/client";
+import { EstadoCita, Prisma } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import { resumenSchema, ResumenInput } from "../schemas";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(verificarToken);
 
@@ -24,13 +23,13 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
   const delMes = { tenantId, fechaHora: { gte: mesDesde, lt: mesHasta } };
 
   const [hoy, proximas, porEstadoRaw, completadas, clientes, servicios] = await Promise.all([
-    prisma.appointment.findMany({
+    req.db.appointment.findMany({
       where: { tenantId, fechaHora: { gte: hoyDesde, lt: hoyHasta } },
       select: CITA_CORTA,
       orderBy: { fechaHora: "asc" },
     }),
     // "Ahora" es un instante, no depende de la zona horaria: lo puede poner el server.
-    prisma.appointment.findMany({
+    req.db.appointment.findMany({
       where: {
         tenantId,
         fechaHora: { gte: new Date() },
@@ -40,17 +39,17 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
       orderBy: { fechaHora: "asc" },
       take: 5,
     }),
-    prisma.appointment.groupBy({ by: ["estado"], where: delMes, _count: { _all: true } }),
+    req.db.appointment.groupBy({ by: ["estado"], where: delMes, _count: { _all: true } }),
     // Los ingresos solo los ve el dueño: para el empleado ni se consultan.
     // Con el precio guardado en la cita (el de cuando se agendó).
     req.rol === "DUENO"
-      ? prisma.appointment.findMany({
+      ? req.db.appointment.findMany({
           where: { ...delMes, estado: "COMPLETADA" },
           select: { precio: true },
         })
       : null,
-    prisma.client.count({ where: { tenantId } }),
-    prisma.service.count({ where: { tenantId } }),
+    req.db.client.count({ where: { tenantId } }),
+    req.db.service.count({ where: { tenantId } }),
   ]);
 
   // Los 5 estados siempre presentes, en 0 si no hay citas.

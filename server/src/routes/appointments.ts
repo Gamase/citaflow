@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { EstadoCita, Prisma, PrismaClient } from "@prisma/client";
+import { EstadoCita, Prisma } from "@prisma/client";
+import type { ClienteTenant } from "../db";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
@@ -16,7 +17,6 @@ import {
 } from "../schemas";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(verificarToken);
 
@@ -53,6 +53,7 @@ function enElPasado(fecha: Date) {
 // hacia atrás: ningún servicio dura más que eso). `excluirId` deja fuera a la propia
 // cita al reagendarla o reasignarla, para que no choque consigo misma.
 async function hayChoque(
+  db: ClienteTenant,
   tenantId: string,
   inicio: Date,
   duracionMin: number,
@@ -61,7 +62,7 @@ async function hayChoque(
 ) {
   const fin = new Date(inicio.getTime() + duracionMin * 60000);
 
-  const candidatas = await prisma.appointment.findMany({
+  const candidatas = await db.appointment.findMany({
     where: {
       tenantId,
       atiendeId,
@@ -100,9 +101,9 @@ const CON_DETALLE = {
 
 // Revisa que `atiendeId` sea alguien activo del negocio. null ("Sin asignar") siempre vale.
 // De otro negocio o inexistente → 404 (como clientId/serviceId); inactiva → 400.
-async function validarAtiende(tenantId: string, atiendeId: string | null) {
+async function validarAtiende(db: ClienteTenant, tenantId: string, atiendeId: string | null) {
   if (atiendeId === null) return { ok: true as const, nombre: null };
-  const persona = await prisma.user.findFirst({ where: { id: atiendeId, tenantId } });
+  const persona = await db.user.findFirst({ where: { id: atiendeId, tenantId } });
   if (!persona) {
     return { ok: false as const, status: 404, error: "Persona no encontrada" };
   }
@@ -120,7 +121,7 @@ function mensajeChoque(nombre: string | null) {
 // Personas activas a las que se les puede asignar una cita. Para todos (el empleado
 // también agenda); sin email ni nada más que lo que pide el select.
 router.get("/personas", async (req, res) => {
-  const personas = await prisma.user.findMany({
+  const personas = await req.db.user.findMany({
     where: { tenantId: req.tenantId as string, activo: true },
     select: { id: true, nombre: true, rol: true },
     orderBy: [{ rol: "asc" }, { nombre: "asc" }],
@@ -130,7 +131,7 @@ router.get("/personas", async (req, res) => {
 
 router.get("/", validar(filtroCitasSchema, "query"), async (req, res) => {
   const { estado, atiende, desde, hasta } = res.locals.query as FiltroCitasInput;
-  const appointments = await prisma.appointment.findMany({
+  const appointments = await req.db.appointment.findMany({
     where: {
       tenantId: req.tenantId as string,
       ...(estado && { estado }),
@@ -150,7 +151,7 @@ router.post("/", validar(citaSchema), async (req, res) => {
     return res.status(400).json({ error: "No puedes agendar una cita en el pasado" });
   }
 
-  const service = await prisma.service.findFirst({
+  const service = await req.db.service.findFirst({
     where: { id: serviceId, tenantId: req.tenantId as string },
   });
 
@@ -158,7 +159,7 @@ router.post("/", validar(citaSchema), async (req, res) => {
     return res.status(404).json({ error: "Servicio no encontrado" });
   }
 
-  const client = await prisma.client.findFirst({
+  const client = await req.db.client.findFirst({
     where: { id: clientId, tenantId: req.tenantId as string },
   });
 
@@ -166,16 +167,16 @@ router.post("/", validar(citaSchema), async (req, res) => {
     return res.status(404).json({ error: "Cliente no encontrado" });
   }
 
-  const persona = await validarAtiende(req.tenantId as string, atiendeId);
+  const persona = await validarAtiende(req.db, req.tenantId as string, atiendeId);
   if (!persona.ok) {
     return res.status(persona.status).json({ error: persona.error });
   }
 
-  if (await hayChoque(req.tenantId as string, fechaHora, service.duracionMin, atiendeId)) {
+  if (await hayChoque(req.db, req.tenantId as string, fechaHora, service.duracionMin, atiendeId)) {
     return res.status(409).json({ error: mensajeChoque(persona.nombre) });
   }
 
-  const appointment = await prisma.appointment.create({
+  const appointment = await req.db.appointment.create({
     data: {
       fechaHora,
       tenantId: req.tenantId as string,
@@ -198,7 +199,7 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
     return res.status(400).json({ error: "No puedes mover una cita al pasado" });
   }
 
-  const appointment = await prisma.appointment.findFirst({
+  const appointment = await req.db.appointment.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
     include: { service: true, atiende: true },
   });
@@ -218,6 +219,7 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
   // Se revisa en la agenda de quien la atiende. El precio no cambia al reagendar.
   if (
     await hayChoque(
+      req.db,
       req.tenantId as string,
       fechaHora,
       appointment.service.duracionMin,
@@ -229,7 +231,7 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
   }
 
   // Se condiciona al estado leído: si otra petición la canceló entre medio, no se mueve.
-  const { count } = await prisma.appointment.updateMany({
+  const { count } = await req.db.appointment.updateMany({
     where: { id: appointment.id, tenantId: req.tenantId as string, estado: actual },
     data: { fechaHora },
   });
@@ -238,7 +240,7 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
     return res.status(409).json({ error: "La cita cambió de estado mientras tanto. Recarga e intenta de nuevo." });
   }
 
-  const actualizada = await prisma.appointment.findFirst({
+  const actualizada = await req.db.appointment.findFirst({
     where: { id: appointment.id, tenantId: req.tenantId as string },
     include: CON_DETALLE,
   });
@@ -251,7 +253,7 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
 router.patch("/:id/atiende", validar(reasignarSchema), async (req, res) => {
   const { atiendeId } = req.body as ReasignarInput;
 
-  const appointment = await prisma.appointment.findFirst({
+  const appointment = await req.db.appointment.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
     include: { service: true },
   });
@@ -267,13 +269,14 @@ router.patch("/:id/atiende", validar(reasignarSchema), async (req, res) => {
       .json({ error: `La cita está marcada como "${NOMBRE_ESTADO[actual]}" y ya no se puede reasignar` });
   }
 
-  const persona = await validarAtiende(req.tenantId as string, atiendeId);
+  const persona = await validarAtiende(req.db, req.tenantId as string, atiendeId);
   if (!persona.ok) {
     return res.status(persona.status).json({ error: persona.error });
   }
 
   if (
     await hayChoque(
+      req.db,
       req.tenantId as string,
       appointment.fechaHora,
       appointment.service.duracionMin,
@@ -285,7 +288,7 @@ router.patch("/:id/atiende", validar(reasignarSchema), async (req, res) => {
   }
 
   // Se condiciona al estado leído: si otra petición la canceló entre medio, no se reasigna.
-  const { count } = await prisma.appointment.updateMany({
+  const { count } = await req.db.appointment.updateMany({
     where: { id: appointment.id, tenantId: req.tenantId as string, estado: actual },
     data: { atiendeId },
   });
@@ -294,7 +297,7 @@ router.patch("/:id/atiende", validar(reasignarSchema), async (req, res) => {
     return res.status(409).json({ error: "La cita cambió de estado mientras tanto. Recarga e intenta de nuevo." });
   }
 
-  const actualizada = await prisma.appointment.findFirst({
+  const actualizada = await req.db.appointment.findFirst({
     where: { id: appointment.id, tenantId: req.tenantId as string },
     include: CON_DETALLE,
   });
@@ -305,7 +308,7 @@ router.patch("/:id/atiende", validar(reasignarSchema), async (req, res) => {
 router.patch("/:id/estado", validar(estadoSchema), async (req, res) => {
   const { estado: nuevo } = req.body as EstadoInput;
 
-  const appointment = await prisma.appointment.findFirst({
+  const appointment = await req.db.appointment.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
@@ -328,7 +331,7 @@ router.patch("/:id/estado", validar(estadoSchema), async (req, res) => {
   }
 
   // Se condiciona al estado leído: si otra petición lo cambió entre medio, no se pisa.
-  const { count } = await prisma.appointment.updateMany({
+  const { count } = await req.db.appointment.updateMany({
     where: { id: appointment.id, tenantId: req.tenantId as string, estado: actual },
     data: { estado: nuevo },
   });
@@ -337,7 +340,7 @@ router.patch("/:id/estado", validar(estadoSchema), async (req, res) => {
     return res.status(409).json({ error: "La cita cambió de estado mientras tanto. Recarga e intenta de nuevo." });
   }
 
-  const actualizada = await prisma.appointment.findFirst({
+  const actualizada = await req.db.appointment.findFirst({
     where: { id: appointment.id, tenantId: req.tenantId as string },
     include: CON_DETALLE,
   });

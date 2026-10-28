@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { PrismaClient, Rol } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { Rol } from "@prisma/client";
+import { clienteDelTenant, prisma, type ClienteTenant } from "../db";
 
 interface JwtPayload {
   userId: string;
@@ -31,6 +30,9 @@ declare global {
       userId?: string;
       tenantId?: string;
       rol?: Rol;
+      // Cliente de Prisma atado al negocio del token (ver db.ts). Lo pone verificarToken:
+      // solo existe en rutas que pasan por él. Las rutas de negocio lo usan en lugar de `prisma`.
+      db: ClienteTenant;
     }
   }
 }
@@ -80,6 +82,7 @@ export async function verificarToken(req: Request, res: Response, next: NextFunc
   req.userId = payload.userId;
   req.tenantId = payload.tenantId;
   req.rol = user.rol;
+  req.db = clienteDelTenant(payload.tenantId);
   next();
 }
 

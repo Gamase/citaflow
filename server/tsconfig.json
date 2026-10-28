@@ -11,5 +11,5 @@
     "outDir": "dist",
     "verbatimModuleSyntax": false
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts"]
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "scripts/**/*.ts"]
 }

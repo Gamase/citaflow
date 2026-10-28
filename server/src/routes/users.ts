@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import bcrypt from "bcryptjs";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { segundoActual, soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
@@ -15,7 +15,6 @@ import {
 } from "../schemas";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // El equipo del negocio: todo es solo para el dueño.
 router.use(verificarToken, soloDueno);
@@ -31,7 +30,7 @@ const USUARIO = {
 } satisfies Prisma.UserSelect;
 
 router.get("/", async (req, res) => {
-  const users = await prisma.user.findMany({
+  const users = await req.db.user.findMany({
     where: { tenantId: req.tenantId as string },
     // Citas próximas que atiende: al desactivar a alguien, Equipo avisa cuántas hay que reasignar.
     select: {
@@ -51,7 +50,7 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/:id", async (req, res) => {
-  const user = await prisma.user.findFirst({
+  const user = await req.db.user.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
     select: USUARIO,
   });
@@ -67,7 +66,7 @@ router.post("/", validar(empleadoSchema), async (req, res) => {
   const hashedPassword = await bcrypt.hash(password, 10);
 
   try {
-    const user = await prisma.user.create({
+    const user = await req.db.user.create({
       data: {
         nombre,
         email,
@@ -95,7 +94,7 @@ async function empleadoEditable(req: Request<Record<string, string>>, res: Respo
     return null;
   }
 
-  const user = await prisma.user.findFirst({
+  const user = await req.db.user.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
@@ -116,7 +115,7 @@ router.patch("/:id", validar(editarEmpleadoSchema), async (req, res) => {
   if (!user) return;
 
   try {
-    const actualizado = await prisma.user.update({
+    const actualizado = await req.db.user.update({
       where: { id: user.id, tenantId: req.tenantId as string },
       data: { nombre, email },
       select: USUARIO,
@@ -136,7 +135,7 @@ router.patch("/:id/password", validar(passwordEmpleadoSchema), async (req, res) 
   const user = await empleadoEditable(req, res);
   if (!user) return;
 
-  await prisma.user.update({
+  await req.db.user.update({
     where: { id: user.id, tenantId: req.tenantId as string },
     // También cierra las sesiones que el empleado tenga abiertas (ver verificarToken).
     data: { password: await bcrypt.hash(password, 10), passwordCambiadaEn: segundoActual() },
@@ -153,7 +152,7 @@ router.patch("/:id/activo", validar(activoSchema), async (req, res) => {
     return res.status(409).json({ error: "No puedes desactivarte a ti mismo" });
   }
 
-  const user = await prisma.user.findFirst({
+  const user = await req.db.user.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
@@ -161,7 +160,7 @@ router.patch("/:id/activo", validar(activoSchema), async (req, res) => {
     return res.status(404).json({ error: "Usuario no encontrado" });
   }
 
-  const actualizado = await prisma.user.update({
+  const actualizado = await req.db.user.update({
     where: { id: user.id, tenantId: req.tenantId as string },
     data: { activo },
     select: USUARIO,

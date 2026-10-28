@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { EstadoCita, PrismaClient, Prisma } from "@prisma/client";
+import { EstadoCita, Prisma } from "@prisma/client";
 import { soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
@@ -13,7 +13,6 @@ import {
 } from "../schemas";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(verificarToken);
 
@@ -25,7 +24,7 @@ router.get("/", validar(busquedaClientesSchema, "query"), async (req, res) => {
   const { q } = res.locals.query as BusquedaClientesInput;
   const digitos = q && PARECE_TELEFONO.test(q) ? q.replace(/\D/g, "") : "";
 
-  const clients = await prisma.client.findMany({
+  const clients = await req.db.client.findMany({
     where: {
       tenantId: req.tenantId as string,
       ...(q && {
@@ -44,13 +43,13 @@ router.get("/:id/historial", validar(idParamSchema, "params"), async (req, res) 
   const tenantId = req.tenantId as string;
   const dueno = req.rol === "DUENO";
 
-  const client = await prisma.client.findFirst({ where: { id: req.params.id, tenantId } });
+  const client = await req.db.client.findFirst({ where: { id: req.params.id, tenantId } });
   if (!client) {
     return res.status(404).json({ error: "Cliente no encontrado" });
   }
 
   const [citas, proxima] = await Promise.all([
-    prisma.appointment.findMany({
+    req.db.appointment.findMany({
       where: { clientId: client.id, tenantId },
       select: {
         id: true,
@@ -63,7 +62,7 @@ router.get("/:id/historial", validar(idParamSchema, "params"), async (req, res) 
       orderBy: { fechaHora: "desc" },
     }),
     // "Ahora" es un instante, no depende de la zona horaria: lo puede poner el server.
-    prisma.appointment.findFirst({
+    req.db.appointment.findFirst({
       where: { clientId: client.id, tenantId, fechaHora: { gte: new Date() }, estado: { in: ["PENDIENTE", "CONFIRMADA"] } },
       select: { id: true, fechaHora: true, estado: true, service: { select: { nombre: true } } },
       orderBy: { fechaHora: "asc" },
@@ -95,7 +94,7 @@ router.post("/", validar(clienteSchema), async (req, res) => {
   const { nombre, telefono, email } = req.body as ClienteInput;
 
   try {
-    const client = await prisma.client.create({
+    const client = await req.db.client.create({
       data: { nombre, telefono, email, tenantId: req.tenantId as string },
     });
     res.status(201).json(client);
@@ -111,7 +110,7 @@ router.post("/", validar(clienteSchema), async (req, res) => {
 router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
   const { nombre, telefono, email } = req.body as EditarClienteInput;
 
-  const client = await prisma.client.findFirst({
+  const client = await req.db.client.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
@@ -120,7 +119,7 @@ router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
   }
 
   try {
-    const actualizado = await prisma.client.update({
+    const actualizado = await req.db.client.update({
       where: { id: client.id, tenantId: req.tenantId as string },
       data: { nombre, telefono, email },
     });
@@ -135,7 +134,7 @@ router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
 
 // Borrar un cliente es solo del dueño; el empleado puede verlos, crearlos y editarlos.
 router.delete("/:id", soloDueno, async (req, res) => {
-  const client = await prisma.client.findFirst({
+  const client = await req.db.client.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });
 
@@ -143,7 +142,7 @@ router.delete("/:id", soloDueno, async (req, res) => {
     return res.status(404).json({ error: "Cliente no encontrado" });
   }
 
-  const citasLigadas = await prisma.appointment.count({
+  const citasLigadas = await req.db.appointment.count({
     where: { clientId: client.id, tenantId: req.tenantId as string },
   });
 
@@ -151,7 +150,7 @@ router.delete("/:id", soloDueno, async (req, res) => {
     return res.status(409).json({ error: "No se puede eliminar: tiene citas asociadas" });
   }
 
-  await prisma.client.delete({ where: { id: client.id, tenantId: req.tenantId as string } });
+  await req.db.client.delete({ where: { id: client.id, tenantId: req.tenantId as string } });
   res.status(204).send();
 });
 
