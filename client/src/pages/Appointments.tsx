@@ -7,6 +7,7 @@ import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
 import { Field, Input, Select } from "../components/ui/Field";
 import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
+import MenuAcciones, { type ItemMenu } from "../components/ui/MenuAcciones";
 import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
@@ -49,6 +50,25 @@ const ACCIONES: Record<string, Destino[]> = {
   PENDIENTE: ["CONFIRMADA", "COMPLETADA", "NO_ASISTIO", "CANCELADA"],
   CONFIRMADA: ["COMPLETADA", "NO_ASISTIO", "CANCELADA"],
 };
+
+// La acción que queda visible en cada fila según su estado; las demás van al menú "⋯".
+// Pendiente → Confirmar; Confirmada que ya empezó → Marcar atendida; Confirmada futura → Reagendar.
+function accionPrincipal(estado: string, yaEmpezo: boolean): string | null {
+  if (estado === "PENDIENTE") return "CONFIRMADA";
+  if (estado === "CONFIRMADA") return yaEmpezo ? "COMPLETADA" : "reagendar";
+  return null;
+}
+
+interface AccionFila {
+  clave: string;
+  label: string;
+  variant: "link" | "link-muted" | "link-danger";
+  tono?: ItemMenu["tono"];
+  onSelect: () => void;
+}
+
+// Color de cada cambio de estado dentro del menú (como sus botones de antes).
+const TONO_MENU: Record<string, ItemMenu["tono"]> = { NO_ASISTIO: "muted", CANCELADA: "danger" };
 
 // Solo se ofrecen cuando la hora de inicio ya pasó (el backend también lo valida).
 const SOLO_DESPUES_DEL_INICIO: Destino[] = ["COMPLETADA", "NO_ASISTIO"];
@@ -434,6 +454,44 @@ export default function Appointments() {
                 const nuevaFecha = moviendo?.fechaHora ? new Date(moviendo.fechaHora).toISOString() : null;
                 const mismaFecha = moviendo?.fechaHora === formatDatetimeLocal(a.fechaHora);
                 const cambiandoA = reasignando?.id === a.id ? reasignando : null;
+
+                // Todas las acciones de la fila; una queda visible y el resto va al menú "⋯".
+                const disponibles: AccionFila[] = [
+                  ...(reagendable
+                    ? [
+                        {
+                          clave: "reagendar",
+                          label: "Reagendar",
+                          variant: "link" as const,
+                          onSelect: () => {
+                            setPorConfirmar(null);
+                            setReasignando(null);
+                            setReagendando({ id: a.id, fechaHora: formatDatetimeLocal(a.fechaHora) });
+                          },
+                        },
+                        {
+                          clave: "reasignar",
+                          label: "Reasignar",
+                          variant: "link" as const,
+                          onSelect: () => {
+                            setPorConfirmar(null);
+                            setReagendando(null);
+                            // Una persona inactiva no sale en el select: se arranca en "Sin asignar".
+                            setReasignando({ id: a.id, atiendeId: a.atiende?.activo ? a.atiende.id : "" });
+                          },
+                        },
+                      ]
+                    : []),
+                  ...acciones.map((destino) => ({
+                    clave: destino,
+                    label: ACCION[destino].label,
+                    variant: ACCION[destino].variant,
+                    tono: TONO_MENU[destino],
+                    onSelect: () => elegirAccion(a.id, destino),
+                  })),
+                ];
+                const principal = disponibles.find((x) => x.clave === accionPrincipal(a.estado, yaEmpezo));
+                const secundarias = disponibles.filter((x) => x !== principal);
                 return (
                   <Tr key={a.id} className={atenuada ? "text-faint" : ""}>
                     <Td>
@@ -530,44 +588,25 @@ export default function Appointments() {
                           </Button>
                         </div>
                       ) : (
-                        <div className="flex justify-end gap-4">
-                          {reagendable && (
+                        <div className="flex items-center justify-end gap-2">
+                          {principal && (
                             <Button
-                              variant="link"
+                              variant={principal.variant}
                               disabled={cambiando === a.id}
-                              onClick={() => {
-                                setPorConfirmar(null);
-                                setReasignando(null);
-                                setReagendando({ id: a.id, fechaHora: formatDatetimeLocal(a.fechaHora) });
-                              }}
+                              onClick={principal.onSelect}
                             >
-                              Reagendar
+                              {principal.label}
                             </Button>
                           )}
-                          {reagendable && (
-                            <Button
-                              variant="link"
-                              disabled={cambiando === a.id}
-                              onClick={() => {
-                                setPorConfirmar(null);
-                                setReagendando(null);
-                                // Una persona inactiva no sale en el select: se arranca en "Sin asignar".
-                                setReasignando({ id: a.id, atiendeId: a.atiende?.activo ? a.atiende.id : "" });
-                              }}
-                            >
-                              Reasignar
-                            </Button>
-                          )}
-                          {acciones.map((destino) => (
-                            <Button
-                              key={destino}
-                              variant={ACCION[destino].variant}
-                              disabled={cambiando === a.id}
-                              onClick={() => elegirAccion(a.id, destino)}
-                            >
-                              {ACCION[destino].label}
-                            </Button>
-                          ))}
+                          <MenuAcciones
+                            etiqueta={`Más acciones para la cita de ${a.client.nombre}`}
+                            items={secundarias.map((x) => ({
+                              label: x.label,
+                              tono: x.tono,
+                              onSelect: x.onSelect,
+                              disabled: cambiando === a.id,
+                            }))}
+                          />
                         </div>
                       )}
                     </Td>
