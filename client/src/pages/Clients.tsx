@@ -32,18 +32,38 @@ export default function Clients() {
   const [editTelefono, setEditTelefono] = useState("");
   const [editEmail, setEditEmail] = useState("");
 
-  function load() {
+  // Lo que el usuario escribe y lo que de verdad se busca (300 ms después de dejar de escribir).
+  const [busqueda, setBusqueda] = useState("");
+  const [termino, setTermino] = useState("");
+  // Subirlo vuelve a pedir la lista (después de crear, editar o borrar, o al reintentar).
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    const limpio = busqueda.trim();
+    const espera = setTimeout(() => setTermino(limpio), limpio ? 300 : 0);
+    return () => clearTimeout(espera);
+  }, [busqueda]);
+
+  useEffect(() => {
+    // Si llega la respuesta de una búsqueda vieja después de una nueva, se ignora.
+    let vigente = true;
     api
-      .get("/clients")
+      .get("/clients", { params: { q: termino || undefined } })
       .then((res) => {
+        if (!vigente) return;
         setClients(res.data);
         setErrorCarga(null);
       })
-      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los clientes.")))
-      .finally(() => setCargando(false));
-  }
+      .catch((err) => vigente && setErrorCarga(apiError(err, "No se pudieron cargar los clientes.")))
+      .finally(() => vigente && setCargando(false));
+    return () => {
+      vigente = false;
+    };
+  }, [termino, version]);
 
-  useEffect(load, []);
+  function load() {
+    setVersion((v) => v + 1);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -177,10 +197,28 @@ export default function Clients() {
       )}
 
       <Card>
+        <div className="border-b border-line p-3">
+          <Input
+            type="search"
+            aria-label="Buscar clientes"
+            placeholder="Buscar por nombre o teléfono"
+            className="h-9 sm:max-w-xs"
+            maxLength={50}
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+          />
+        </div>
         {cargando ? (
           <p className="px-4 py-14 text-center text-sm text-muted">Cargando clientes…</p>
         ) : errorCarga ? (
           <ErrorState message={errorCarga} onRetry={load} />
+        ) : clients.length === 0 && termino ? (
+          <div className="px-4 py-14 text-center text-sm text-muted">
+            <p>No hay clientes que coincidan con “{termino}”.</p>
+            <Button variant="link" className="mt-2" onClick={() => setBusqueda("")}>
+              Limpiar búsqueda
+            </Button>
+          </div>
         ) : clients.length === 0 ? (
           <EmptyState
             icon={<UsersIcon className="size-5" />}

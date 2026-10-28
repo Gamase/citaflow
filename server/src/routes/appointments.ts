@@ -2,7 +2,16 @@ import { Router } from "express";
 import { EstadoCita, PrismaClient } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
-import { citaSchema, estadoSchema, reagendarSchema, CitaInput, EstadoInput, ReagendarInput } from "../schemas";
+import {
+  citaSchema,
+  estadoSchema,
+  filtroCitasSchema,
+  reagendarSchema,
+  CitaInput,
+  EstadoInput,
+  FiltroCitasInput,
+  ReagendarInput,
+} from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -70,9 +79,14 @@ const NOMBRE_ESTADO: Record<EstadoCita, string> = {
   CANCELADA: "Cancelada",
 };
 
-router.get("/", async (req, res) => {
+router.get("/", validar(filtroCitasSchema, "query"), async (req, res) => {
+  const { estado, desde, hasta } = res.locals.query as FiltroCitasInput;
   const appointments = await prisma.appointment.findMany({
-    where: { tenantId: req.tenantId as string },
+    where: {
+      tenantId: req.tenantId as string,
+      ...(estado && { estado }),
+      ...(desde && hasta && { fechaHora: { gte: desde, lt: hasta } }),
+    },
     include: { client: true, service: true },
     orderBy: { fechaHora: "asc" },
   });

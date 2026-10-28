@@ -279,6 +279,87 @@ t "PATCH quitar email (null)"      200 PATCH "/clients/$CLI_TMP" "$TA" '{"email"
 t "DELETE cliente de otro negocio" 404 DELETE "/clients/$CLI_B" "$TA"
 t "DELETE cliente sin citas"       204 DELETE "/clients/$CLI_TMP" "$TA"
 
+echo "== Búsqueda y filtros"
+# cumple "descripción" 'expresión JS sobre r (el último JSON recibido)' → ✅ si es verdadera.
+cumple() {
+  local desc=$1 expr=$2 detalle
+  TOTAL=$((TOTAL + 1))
+  if detalle=$(node -e '
+    const r = JSON.parse(require("fs").readFileSync(process.argv[1]));
+    console.log(Array.isArray(r) ? r.length + " resultados" : "");
+    process.exit(new Function("r", "return (" + process.argv[2] + ")")(r) ? 0 : 1);
+  ' "$RESP" "$expr"); then
+    printf "✅ %-40s %s\n" "$desc" "$detalle"
+  else
+    FALLAS=$((FALLAS + 1))
+    printf "❌ %-40s %s  %s\n" "$desc" "$detalle" "$(head -c 90 "$RESP")"
+  fi
+}
+enc() { node -p 'encodeURIComponent(process.argv[1])' "$1"; }
+
+# Qué buscar y cuántos resultados esperar, calculado de prisma/seed-data.ts.
+BUSQUEDA=$(npx --no-install tsx -e "
+  import { DATASETS } from './prisma/seed-data';
+  const [a, b] = DATASETS['$LABEL']!.tenants;
+  const min = (s: string) => s.toLowerCase();
+  const apellido = a!.clientes[1]!.nombre.split(' ')[1]!;
+  const tel = a!.clientes[2]!.telefono;
+  const finTel = tel.slice(6);
+  const soloB = b!.clientes.find((c) => !a!.clientes.some((x) => min(x.nombre).includes(min(c.nombre))))!.nombre;
+  const porEstado = (t: typeof a, e: string) => t!.citas.filter((c) => c.estado === e).length;
+  console.log(apellido.toUpperCase());
+  console.log(a!.clientes.filter((c) => min(c.nombre).includes(min(apellido))).length);
+  console.log(tel.slice(0, 3) + ' ' + tel.slice(3, 6) + ' ' + tel.slice(6));
+  console.log(tel);
+  console.log(finTel.slice(0, 2) + '-' + finTel.slice(2));
+  console.log(a!.clientes.filter((c) => c.telefono.includes(finTel)).length);
+  console.log(soloB);
+  console.log(porEstado(a, 'COMPLETADA'));
+  console.log(porEstado(b, 'COMPLETADA'));
+  console.log(porEstado(a, 'PENDIENTE'));
+  console.log(a!.citas.length);
+" 2>/dev/null)
+linea() { sed -n "${1}p" <<< "$BUSQUEDA"; }
+APELLIDO=$(linea 1); N_APELLIDO=$(linea 2); TEL_FMT=$(linea 3); TEL_BUSCADO=$(linea 4)
+FIN_TEL=$(linea 5); N_FIN_TEL=$(linea 6); SOLO_B=$(linea 7)
+N_COMPLETADAS_A=$(linea 8); N_COMPLETADAS_B=$(linea 9); N_PENDIENTES_A=$(linea 10); N_CITAS_A=$(linea 11)
+
+t "clientes sin búsqueda"          200 GET /clients "$TA"
+N_TODOS=$(campo "$RESP" length)
+t "buscar solo espacios = todos"   200 GET "/clients?q=%20%20" "$TA"
+cumple "  mismos que sin búsqueda"   "r.length === $N_TODOS"
+t "buscar nombre (\"$APELLIDO\")"  200 GET "/clients?q=$(enc "$APELLIDO")" "$TA"
+cumple "  sin importar mayúsculas"   "r.length === $N_APELLIDO && r.every((c) => c.nombre.toLowerCase().includes('${APELLIDO,,}'))"
+t "buscar teléfono con espacios"   200 GET "/clients?q=$(enc "$TEL_FMT")" "$TA"
+cumple "  encuentra ese teléfono"    "r.length === 1 && r[0].telefono === '$TEL_BUSCADO'"
+t "buscar parte del teléfono"      200 GET "/clients?q=$(enc "$FIN_TEL")" "$TA"
+cumple "  coincide con el seed"      "r.length === $N_FIN_TEL"
+t "A busca un cliente de B"        200 GET "/clients?q=$(enc "$SOLO_B")" "$TA"
+cumple "  aislamiento: no lo ve"     "r.length === 0"
+t "B sí lo encuentra"              200 GET "/clients?q=$(enc "$SOLO_B")" "$TB"
+cumple "  (control)"                 "r.length >= 1"
+t "búsqueda de 51 caracteres"      400 GET "/clients?q=$(printf 'a%.0s' $(seq 51))" "$TA"
+t "búsqueda repetida (q=a&q=b)"    400 GET "/clients?q=a&q=b" "$TA"
+
+# desde=hoy-$1 días, hasta=hoy+$2 días (negativo = hacia atrás).
+rango_citas() { node -p "const n=Date.now(), d=864e5; 'desde='+new Date(n-($1)*d).toISOString()+'&hasta='+new Date(n+($2)*d).toISOString()"; }
+t "citas estado inválido"          400 GET "/appointments?estado=VOLANDO" "$TA"
+t "citas estado en minúsculas"     400 GET "/appointments?estado=pendiente" "$TA"
+t "citas rango al revés"           400 GET "/appointments?$(rango_citas -15 -16)" "$TA"
+t "citas rango de 40 días"         400 GET "/appointments?$(rango_citas 20 20)" "$TA"
+t "citas solo desde"               400 GET "/appointments?$(rango_citas 1 1 | cut -d'&' -f1)" "$TA"
+t "citas fecha inválida"           400 GET "/appointments?desde=no-es-fecha&hasta=x" "$TA"
+t "citas sin filtros"              200 GET /appointments "$TA"
+cumple "  todas (seed + las de pruebas)" "r.length >= $N_CITAS_A"
+t "citas Atendidas de A"           200 GET "/appointments?estado=COMPLETADA" "$TA"
+cumple "  solo Atendidas, las del seed" "r.length === $N_COMPLETADAS_A && r.every((c) => c.estado === 'COMPLETADA')"
+t "citas Atendidas de B"           200 GET "/appointments?estado=COMPLETADA" "$TB"
+cumple "  aislamiento: solo las de B" "r.length === $N_COMPLETADAS_B && r.every((c) => c.estado === 'COMPLETADA')"
+# Un solo Date.now() para los dos extremos: con dos, el rango pasa de 32 días por milisegundos.
+read -r DESDE HASTA <<< "$(node -p 'const n = Date.now(); new Date(n - 16*864e5).toISOString() + " " + new Date(n + 16*864e5).toISOString()')"
+t "Pendientes de A en ±16 días"    200 GET "/appointments?estado=PENDIENTE&desde=$DESDE&hasta=$HASTA" "$TA"
+cumple "  estado y rango respetados" "r.length === $N_PENDIENTES_A && r.every((c) => c.estado === 'PENDIENTE' && c.fechaHora >= '$DESDE' && c.fechaHora < '$HASTA')"
+
 echo "== Appointments"
 t "POST sin body"                  400 POST /appointments "$TA"
 t "POST sin serviceId"             400 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"fechaHora\":\"$FUT\"}"

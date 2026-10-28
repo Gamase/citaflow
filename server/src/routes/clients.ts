@@ -2,16 +2,38 @@ import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
-import { clienteSchema, editarClienteSchema, ClienteInput, EditarClienteInput } from "../schemas";
+import {
+  busquedaClientesSchema,
+  clienteSchema,
+  editarClienteSchema,
+  BusquedaClientesInput,
+  ClienteInput,
+  EditarClienteInput,
+} from "../schemas";
 
 const router = Router();
 const prisma = new PrismaClient();
 
 router.use(verificarToken);
 
-router.get("/", async (req, res) => {
+// Si lo que se busca parece teléfono ("664 000-01"), también busca por teléfono
+// con solo los dígitos; si trae letras, solo por nombre.
+const PARECE_TELEFONO = /^[\d\s()+-]+$/;
+
+router.get("/", validar(busquedaClientesSchema, "query"), async (req, res) => {
+  const { q } = res.locals.query as BusquedaClientesInput;
+  const digitos = q && PARECE_TELEFONO.test(q) ? q.replace(/\D/g, "") : "";
+
   const clients = await prisma.client.findMany({
-    where: { tenantId: req.tenantId as string },
+    where: {
+      tenantId: req.tenantId as string,
+      ...(q && {
+        OR: [
+          { nombre: { contains: q, mode: "insensitive" } },
+          ...(digitos ? [{ telefono: { contains: digitos } }] : []),
+        ],
+      }),
+    },
   });
   res.json(clients);
 });

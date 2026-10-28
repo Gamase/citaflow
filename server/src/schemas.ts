@@ -108,6 +108,33 @@ export const resumenSchema = z
     "El rango no puede ser mayor a 32 días",
   );
 
+// --- Filtros de listas ---
+
+// Texto vacío (o solo espacios) cuenta como "sin búsqueda".
+export const busquedaClientesSchema = z.object({
+  q: z
+    .string({ error: "La búsqueda no es válida" })
+    .trim()
+    .max(50, "La búsqueda puede tener máximo 50 caracteres")
+    .optional()
+    .transform((q) => q || undefined),
+});
+
+// Mismas reglas de rango que el Resumen. desde y hasta van juntos: un rango abierto
+// ("todo desde X") no lo usa el front y así no hay que adivinar qué quiso decir.
+export const filtroCitasSchema = z
+  .object({
+    estado: z.enum(EstadoCita, { error: "Estado no válido" }).optional(),
+    desde: fecha("desde").optional(),
+    hasta: fecha("hasta").optional(),
+  })
+  .refine((q) => (q.desde === undefined) === (q.hasta === undefined), "Manda desde y hasta juntos")
+  .refine((q) => !q.desde || !q.hasta || q.desde < q.hasta, "El inicio del rango debe ser antes del fin")
+  .refine(
+    (q) => !q.desde || !q.hasta || q.hasta.getTime() - q.desde.getTime() <= MAX_RANGO_MS,
+    "El rango no puede ser mayor a 32 días",
+  );
+
 export type RegistroInput = z.infer<typeof registroSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ServicioInput = z.infer<typeof servicioSchema>;
@@ -118,3 +145,5 @@ export type CitaInput = z.infer<typeof citaSchema>;
 export type ReagendarInput = z.infer<typeof reagendarSchema>;
 export type EstadoInput = z.infer<typeof estadoSchema>;
 export type ResumenInput = z.infer<typeof resumenSchema>;
+export type BusquedaClientesInput = z.infer<typeof busquedaClientesSchema>;
+export type FiltroCitasInput = z.infer<typeof filtroCitasSchema>;

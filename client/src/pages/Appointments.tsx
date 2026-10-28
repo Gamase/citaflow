@@ -74,6 +74,32 @@ const ACCION: Record<
   },
 };
 
+type Rango = "hoy" | "semana" | "mes" | "todas";
+
+const RANGOS: { valor: Rango; label: string }[] = [
+  { valor: "hoy", label: "Hoy" },
+  { valor: "semana", label: "Esta semana" },
+  { valor: "mes", label: "Este mes" },
+  { valor: "todas", label: "Todas" },
+];
+
+// Inicio y fin del rango en la hora local del navegador, igual que en el Resumen
+// (el server está en UTC y no sabe cuándo empieza "hoy"). La semana empieza en lunes.
+function fechasDelRango(rango: Rango) {
+  const ahora = new Date();
+  const [y, m, d] = [ahora.getFullYear(), ahora.getMonth(), ahora.getDate()];
+  const lunes = d - ((ahora.getDay() + 6) % 7);
+  const [desde, hasta] =
+    rango === "hoy"
+      ? [new Date(y, m, d), new Date(y, m, d + 1)]
+      : rango === "semana"
+        ? [new Date(y, m, lunes), new Date(y, m, lunes + 7)]
+        : rango === "mes"
+          ? [new Date(y, m, 1), new Date(y, m + 1, 1)]
+          : [];
+  return desde && hasta ? { desde: desde.toISOString(), hasta: hasta.toISOString() } : {};
+}
+
 export default function Appointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -88,17 +114,32 @@ export default function Appointments() {
   const [cambiando, setCambiando] = useState<string | null>(null);
   // Cita que se está reagendando y la nueva fecha elegida (valor del datetime-local).
   const [reagendando, setReagendando] = useState<{ id: string; fechaHora: string } | null>(null);
+  const [filtroEstado, setFiltroEstado] = useState<Estado | "">("");
+  const [rango, setRango] = useState<Rango>("todas");
+  // Subirlo vuelve a pedir todo (después de agendar o cambiar una cita, o al reintentar).
+  const [version, setVersion] = useState(0);
   const toast = useToast();
 
-  function load() {
+  // La agenda se vuelve a pedir al cambiar un filtro; si llega una respuesta de un
+  // filtro anterior después de la del actual, se ignora.
+  useEffect(() => {
+    let vigente = true;
     api
-      .get("/appointments")
+      .get("/appointments", { params: { estado: filtroEstado || undefined, ...fechasDelRango(rango) } })
       .then((res) => {
+        if (!vigente) return;
         setAppointments(res.data);
         setErrorCarga(null);
       })
-      .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar las citas.")))
-      .finally(() => setCargando(false));
+      .catch((err) => vigente && setErrorCarga(apiError(err, "No se pudieron cargar las citas.")))
+      .finally(() => vigente && setCargando(false));
+    return () => {
+      vigente = false;
+    };
+  }, [filtroEstado, rango, version]);
+
+  // Clientes y servicios para los selects del formulario: siempre completos, sin filtros.
+  useEffect(() => {
     api
       .get("/clients")
       .then((res) => setClients(res.data))
@@ -107,9 +148,18 @@ export default function Appointments() {
       .get("/services")
       .then((res) => setServices(res.data))
       .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los servicios.")));
+  }, [version]);
+
+  function load() {
+    setVersion((v) => v + 1);
   }
 
-  useEffect(load, []);
+  const hayFiltros = filtroEstado !== "" || rango !== "todas";
+
+  function quitarFiltros() {
+    setFiltroEstado("");
+    setRango("todas");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -249,10 +299,45 @@ export default function Appointments() {
       )}
 
       <Card>
+        <div className="flex flex-wrap items-center gap-3 border-b border-line p-3">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Rango de fechas">
+            {RANGOS.map((r) => (
+              <Button
+                key={r.valor}
+                size="sm"
+                variant={rango === r.valor ? "primary" : "secondary"}
+                aria-pressed={rango === r.valor}
+                onClick={() => setRango(r.valor)}
+              >
+                {r.label}
+              </Button>
+            ))}
+          </div>
+          <Select
+            aria-label="Filtrar por estado"
+            className="h-8 w-auto"
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value as Estado | "")}
+          >
+            <option value="">Todos los estados</option>
+            {Object.entries(estados).map(([valor, { label }]) => (
+              <option key={valor} value={valor}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </div>
         {cargando ? (
           <p className="px-4 py-14 text-center text-sm text-muted">Cargando citas…</p>
         ) : errorCarga ? (
           <ErrorState message={errorCarga} onRetry={load} />
+        ) : appointments.length === 0 && hayFiltros ? (
+          <div className="px-4 py-14 text-center text-sm text-muted">
+            <p>No hay citas con estos filtros.</p>
+            <Button variant="link" className="mt-2" onClick={quitarFiltros}>
+              Quitar filtros
+            </Button>
+          </div>
         ) : appointments.length === 0 ? (
           <EmptyState
             icon={<CalendarIcon className="size-5" />}
