@@ -41,6 +41,7 @@ export default function Login() {
           <Link className="font-medium text-teal-700 hover:underline" to="/register">
             Registra tu negocio
           </Link>
+          <span className="mt-3 block text-xs">Si eres empleado, el dueño de tu negocio te da tu acceso.</span>
         </>
       }
     >

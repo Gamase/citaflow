@@ -39,13 +39,18 @@ export default function Register() {
   return (
     <AuthLayout
       title="Registra tu negocio"
-      subtitle="Crea tu espacio en CitaFlow en menos de un minuto."
+      subtitle="Crea un negocio nuevo en CitaFlow. Serás el dueño de la cuenta."
       footer={
         <>
           ¿Ya tienes cuenta?{" "}
           <Link className="font-medium text-teal-700 hover:underline" to="/login">
             Inicia sesión
           </Link>
+          {/* El footer va dentro de un <p>: un span en bloque para la segunda línea. */}
+          <span className="mt-3 block text-xs">
+            ¿Trabajas en un negocio que ya usa CitaFlow? Pídele al dueño que te dé de alta en Equipo e inicia
+            sesión.
+          </span>
         </>
       }
     >
