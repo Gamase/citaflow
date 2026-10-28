@@ -46,7 +46,7 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
     req.rol === "DUENO"
       ? prisma.appointment.findMany({
           where: { ...delMes, estado: "COMPLETADA" },
-          select: { precio: true, service: { select: { precio: true } } },
+          select: { precio: true },
         })
       : null,
     prisma.client.count({ where: { tenantId } }),
@@ -63,9 +63,7 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
   const resueltas = porEstado.COMPLETADA + porEstado.NO_ASISTIO;
   const tasaNoAsistencia = resueltas === 0 ? null : porEstado.NO_ASISTIO / resueltas;
 
-  // `?? service.precio`: solo mientras la columna sea opcional (citas creadas por el código
-  // viejo durante el build). La migración 2 la vuelve obligatoria y esto se quita.
-  const ingresos = completadas?.reduce((suma, c) => suma.plus(c.precio ?? c.service.precio), new Prisma.Decimal(0));
+  const ingresos = completadas?.reduce((suma, c) => suma.plus(c.precio), new Prisma.Decimal(0));
 
   res.json({
     hoy,

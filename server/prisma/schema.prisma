@@ -97,9 +97,8 @@ model Appointment {
   service   Service  @relation(fields: [serviceId], references: [id])
 
   // Precio del servicio al momento de agendar: si después cambia el del servicio, esta
-  // cita conserva el suyo. Opcional solo por la transición (ver migración); el código
-  // nuevo siempre lo llena.
-  precio    Decimal?
+  // cita conserva el suyo.
+  precio    Decimal
 
   // Quién atiende la cita (dueño o empleado del mismo negocio). null = "Sin asignar".
   // Cada persona tiene su propia agenda: el choque de horario se revisa por persona.
