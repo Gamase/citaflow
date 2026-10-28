@@ -85,8 +85,15 @@ export default function Equipo() {
     }
   }
 
+  // El dueño responde por los correos de su equipo: primero verifica el suyo (el backend lo exige).
+  const verificado = getSession()?.user.verificado !== false;
+
   const botonNuevo = (
-    <Button onClick={() => setMostrarForm(true)}>
+    <Button
+      onClick={() => setMostrarForm(true)}
+      disabled={!verificado}
+      title={verificado ? undefined : "Verifica tu correo para dar de alta empleados"}
+    >
       <PlusIcon />
       Nuevo empleado
     </Button>

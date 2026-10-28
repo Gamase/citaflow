@@ -44,6 +44,9 @@ model User {
   // Cuándo se cambió la contraseña, redondeado al segundo (el `iat` del JWT va en segundos).
   // verificarToken rechaza los tokens emitidos antes: cambiar la contraseña cierra las otras sesiones.
   passwordCambiadaEn DateTime?
+  // Cuándo confirmó su correo (null = sin verificar). Sin verificar puede usar la app, pero
+  // no crear empleados ni cambiar su email. Los empleados que crea el dueño nacen verificados.
+  emailVerificado DateTime?
   creadoEn  DateTime @default(now())
 
   tenantId  String
@@ -51,6 +54,32 @@ model User {
 
   // Citas asignadas a esta persona (Appointment.atiendeId).
   citasQueAtiende Appointment[]
+  tokensCorreo    TokenCorreo[]
+}
+
+enum TipoTokenCorreo {
+  VERIFICACION
+  RESET
+}
+
+// Enlaces de un solo uso que se mandan por correo (verificar correo, restablecer contraseña).
+// Solo se guarda el sha256 del token, nunca el token: con una copia de la BD no se pueden usar.
+// Sin RLS (como User): se usa antes de saber el negocio. Nada se borra: un token usado o
+// reemplazado por uno nuevo queda con `usadoEn`.
+model TokenCorreo {
+  id        String          @id @default(uuid())
+  tipo      TipoTokenCorreo
+  hash      String          @unique
+  // El correo al que se mandó: si el usuario cambia su email, un enlace viejo no verifica el nuevo.
+  email     String
+  expiraEn  DateTime
+  usadoEn   DateTime?
+  creadoEn  DateTime        @default(now())
+
+  userId    String
+  user      User            @relation(fields: [userId], references: [id])
+
+  @@index([userId, tipo])
 }
 
 model Service {

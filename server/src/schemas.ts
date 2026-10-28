@@ -34,6 +34,22 @@ export const loginSchema = z.object({
   password: z.string({ error: "La contraseña es obligatoria" }).min(1, "La contraseña es obligatoria"),
 });
 
+// --- Correo: verificar y restablecer ---
+
+const tokenCorreo = z
+  .string({ error: "El enlace no es válido o ya venció" })
+  .min(1, "El enlace no es válido o ya venció")
+  .max(200, "El enlace no es válido o ya venció");
+
+export const verificarCorreoSchema = z.object({ token: tokenCorreo });
+
+export const olvideSchema = z.object({ email });
+
+export const restablecerSchema = z.object({
+  token: tokenCorreo,
+  password: registroSchema.shape.password,
+});
+
 // --- Usuarios (equipo del negocio) ---
 
 // El dueño da de alta al empleado con una contraseña temporal (mismas reglas que al registrarse).
@@ -200,6 +216,9 @@ export const filtroCitasSchema = z
 
 export type RegistroInput = z.infer<typeof registroSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type VerificarCorreoInput = z.infer<typeof verificarCorreoSchema>;
+export type OlvideInput = z.infer<typeof olvideSchema>;
+export type RestablecerInput = z.infer<typeof restablecerSchema>;
 export type EmpleadoInput = z.infer<typeof empleadoSchema>;
 export type EditarEmpleadoInput = z.infer<typeof editarEmpleadoSchema>;
 export type PasswordEmpleadoInput = z.infer<typeof passwordEmpleadoSchema>;

@@ -12,6 +12,7 @@ import { esDueno, type ContextoSesion } from "../lib/session";
 interface MiCuenta {
   nombre: string;
   email: string;
+  emailVerificado: string | null;
   tenant: { id: string; nombre: string };
 }
 
@@ -90,9 +91,15 @@ function MiCuentaForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c
         ...(cambiaEmail && { email, passwordActual }),
       });
       onGuardado(res.data);
-      actualizarSesion({ user: { nombre: res.data.nombre, email: res.data.email } });
+      actualizarSesion({
+        user: { nombre: res.data.nombre, email: res.data.email, verificado: res.data.emailVerificado !== null },
+      });
       setPasswordActual("");
-      toast.success("Tus datos se guardaron.");
+      toast.success(
+        cambiaEmail
+          ? `Tus datos se guardaron. Te mandamos un correo a ${res.data.email} para confirmarlo.`
+          : "Tus datos se guardaron.",
+      );
     } catch (err) {
       toast.error(apiError(err, "No se pudieron guardar tus datos."));
     } finally {
@@ -107,9 +114,19 @@ function MiCuentaForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c
           <Field label="Nombre">
             {(id) => <Input id={id} value={nombre} onChange={(e) => setNombre(e.target.value)} required />}
           </Field>
-          <Field label="Email">
+          <Field
+            label="Email"
+            hint={cuenta.emailVerificado ? undefined : "Verifica tu correo actual para poder cambiarlo."}
+          >
             {(id) => (
-              <Input id={id} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Input
+                id={id}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={!cuenta.emailVerificado}
+                required
+              />
             )}
           </Field>
           {cambiaEmail && (

@@ -9,6 +9,9 @@ import Resumen from "./pages/Resumen";
 import Equipo from "./pages/Equipo";
 import HistorialCliente from "./pages/HistorialCliente";
 import Ajustes from "./pages/Ajustes";
+import Verificar from "./pages/Verificar";
+import Olvide from "./pages/Olvide";
+import Restablecer from "./pages/Restablecer";
 import { clearSession, esDueno, getSession, LOGIN_EXPIRADA, tokenVigente } from "./lib/session";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -35,6 +38,10 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        {/* Públicas: se abren desde los enlaces de los correos. */}
+        <Route path="/verificar" element={<Verificar />} />
+        <Route path="/olvide" element={<Olvide />} />
+        <Route path="/restablecer" element={<Restablecer />} />
         <Route
           path="/dashboard"
           element={

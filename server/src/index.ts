@@ -20,11 +20,18 @@ try {
 }
 
 // Sin estas el server no tiene sentido: no arranca.
-for (const variable of ["JWT_SECRET", "DATABASE_URL", "CORS_ORIGIN", "TRUST_PROXY"]) {
+// FRONTEND_URL: para armar los enlaces de los correos (verificar, restablecer).
+for (const variable of ["JWT_SECRET", "DATABASE_URL", "CORS_ORIGIN", "TRUST_PROXY", "FRONTEND_URL"]) {
   if (!process.env[variable]) {
     console.error(`Falta la variable de entorno ${variable}. El servidor no arranca.`);
     process.exit(1);
   }
+}
+
+// Sin RESEND_API_KEY los correos se imprimen en la consola (DEV). Con ella, hace falta el remitente.
+if (process.env.RESEND_API_KEY && !process.env.CORREO_REMITENTE) {
+  console.error("Con RESEND_API_KEY también hace falta CORREO_REMITENTE. El servidor no arranca.");
+  process.exit(1);
 }
 
 // Orígenes del front que pueden llamar a la API, separados por coma.

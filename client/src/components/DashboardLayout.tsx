@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import logoDark from "../assets/citaflow-logo-dark.svg";
 import mark from "../assets/citaflow-mark.svg";
+import api from "../api/client";
 import { clearSession, esDueno, getSession, saveSession, type ContextoSesion } from "../lib/session";
+import Button from "./ui/Button";
+import { apiError, useToast } from "./ui/useToast";
 import { BadgeIcon, CalendarIcon, ChartIcon, GearIcon, LogOutIcon, MenuIcon, TagIcon, UsersIcon, XIcon } from "./ui/Icons";
 
 // `end` en Resumen: si no, /dashboard quedaría activo también en /dashboard/clients, etc.
@@ -37,6 +40,37 @@ export default function DashboardLayout() {
     },
   };
   const negocio = session?.tenant.nombre ?? "Tu negocio";
+  const sinVerificar = session?.user.verificado === false;
+  const toast = useToast();
+  const [reenviando, setReenviando] = useState(false);
+
+  // Si verificó en otra pestaña o dispositivo, el aviso se quita sin volver a entrar.
+  // (Solo al montar; después, Ajustes y /verificar actualizan la sesión ellos mismos.)
+  useEffect(() => {
+    if (getSession()?.user.verificado !== false) return;
+    api
+      .get("/me")
+      .then((res) => {
+        const actual = getSession();
+        if (!res.data.emailVerificado || !actual) return;
+        const nueva = { ...actual, user: { ...actual.user, verificado: true } };
+        saveSession(nueva);
+        setSession(nueva);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function reenviar() {
+    setReenviando(true);
+    try {
+      const res = await api.post("/me/reenviar-verificacion");
+      toast.success(res.data.mensaje);
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo reenviar el correo."));
+    } finally {
+      setReenviando(false);
+    }
+  }
 
   function logout() {
     clearSession();
@@ -157,6 +191,20 @@ export default function DashboardLayout() {
       )}
 
       <main className="min-w-0 flex-1 lg:pl-64">
+        {sinVerificar && (
+          <div role="status" className="border-b border-amber-500/30 bg-amber-50 px-4 py-3 sm:px-8">
+            <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 text-sm text-amber-800">
+              <p className="min-w-0 flex-1">
+                <span className="font-semibold">Verifica tu correo.</span> Te mandamos un enlace a{" "}
+                <span className="font-medium break-all">{session?.user.email}</span>. Mientras tanto puedes usar
+                CitaFlow, pero no dar de alta empleados ni cambiar tu email.
+              </p>
+              <Button size="sm" variant="secondary" disabled={reenviando} onClick={reenviar}>
+                {reenviando ? "Enviando…" : "Reenviar correo"}
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
           <Outlet context={contexto} />
         </div>

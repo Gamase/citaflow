@@ -56,6 +56,7 @@ async function main() {
 
       console.log(`Sembrando dataset "${label}"...`);
       console.log("Limpiando base de datos...");
+      await tx.tokenCorreo.deleteMany();
       await tx.appointment.deleteMany();
       await tx.client.deleteMany();
       await tx.service.deleteMany();
@@ -74,12 +75,14 @@ async function main() {
                   password: hashes.get(t.email)!,
                   nombre: t.nombreUsuario,
                   rol: "DUENO",
+                emailVerificado: ahora,
                 },
                 {
                   email: t.empleado.email,
                   password: hashes.get(t.empleado.email)!,
                   nombre: t.empleado.nombre,
                   rol: "EMPLEADO",
+                emailVerificado: ahora,
                 },
               ],
             },

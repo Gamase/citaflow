@@ -15,6 +15,7 @@ export default function Login() {
   const toast = useToast();
   const [searchParams] = useSearchParams();
   const sesionExpirada = searchParams.get("expirada") === "1";
+  const restablecida = searchParams.get("restablecida") === "1";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +47,11 @@ export default function Login() {
       }
     >
       <form onSubmit={handleSubmit} className="space-y-5">
+        {restablecida && (
+          <p role="status" className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-700">
+            Tu contraseña cambió. Entra con la nueva.
+          </p>
+        )}
         {sesionExpirada && (
           <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
             Tu sesión expiró, vuelve a iniciar sesión.
@@ -64,18 +70,23 @@ export default function Login() {
             />
           )}
         </Field>
-        <Field label="Contraseña">
-          {(id) => (
-            <Input
-              id={id}
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          )}
-        </Field>
+        <div>
+          <Field label="Contraseña">
+            {(id) => (
+              <Input
+                id={id}
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            )}
+          </Field>
+          <Link to="/olvide" className="mt-2 inline-block text-sm font-medium text-teal-700 hover:underline">
+            ¿Olvidaste tu contraseña?
+          </Link>
+        </div>
         <Button type="submit" className="w-full" disabled={enviando}>
           {enviando ? "Entrando…" : "Entrar"}
         </Button>

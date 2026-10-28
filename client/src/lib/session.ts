@@ -6,7 +6,8 @@ export type Rol = "DUENO" | "EMPLEADO";
 
 export interface Session {
   tenant: { id: string; nombre: string };
-  user: { nombre: string; email: string; rol: Rol };
+  // verificado: ¿confirmó su correo? (sesiones de antes de la verificación no lo traen).
+  user: { nombre: string; email: string; rol: Rol; verificado?: boolean };
 }
 
 const KEY = "session";
@@ -30,6 +31,12 @@ export function getSession(): Session | null {
 // del usuario o del negocio y el sidebar se redibuja sin volver a entrar.
 export interface ContextoSesion {
   actualizarSesion: (cambios: { user?: Partial<Session["user"]>; tenant?: Partial<Session["tenant"]> }) => void;
+}
+
+// Al abrir el enlace del correo en este navegador: si hay sesión, se marca verificada.
+export function marcarVerificado() {
+  const s = getSession();
+  if (s) saveSession({ ...s, user: { ...s.user, verificado: true } });
 }
 
 export function esDueno(): boolean {

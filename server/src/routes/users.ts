@@ -63,6 +63,11 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", validar(empleadoSchema), async (req, res) => {
   const { nombre, email, password } = req.body as EmpleadoInput;
+
+  // El dueño responde por los correos de su equipo: primero tiene que verificar el suyo.
+  if (!req.verificado) {
+    return res.status(403).json({ error: "Verifica tu correo antes de dar de alta empleados. Revisa tu bandeja o pide otro enlace." });
+  }
   const hashedPassword = await bcrypt.hash(password, 10);
 
   try {
@@ -72,6 +77,9 @@ router.post("/", validar(empleadoSchema), async (req, res) => {
         email,
         password: hashedPassword,
         rol: "EMPLEADO",
+        // Nace verificado: el dueño (ya verificado) responde por el correo que escribió.
+        // Limitación: si lo escribe mal, el "olvidé" de ese empleado le llega a otra persona.
+        emailVerificado: new Date(),
         tenantId: req.tenantId as string,
       },
       select: USUARIO,

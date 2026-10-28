@@ -3,9 +3,10 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import type { ClienteTenant } from "../db";
 import { firmarToken, segundoActual, verificarToken } from "../middleware/auth";
-import { limiteContrasena } from "../middleware/limites";
+import { limiteContrasena, limiteReenvio } from "../middleware/limites";
 import { validar } from "../middleware/validar";
 import { miCuentaSchema, miPasswordSchema, MiCuentaInput, MiPasswordInput } from "../schemas";
+import { mandarVerificacion } from "../tokensCorreo";
 
 // Ajustes de la cuenta de quien hace la petición (dueño o empleado): siempre sobre sí mismo.
 const router = Router();
@@ -13,9 +14,11 @@ const router = Router();
 router.use(verificarToken);
 
 const MI_CUENTA = {
+  id: true,
   nombre: true,
   email: true,
   rol: true,
+  emailVerificado: true,
   tenant: { select: { id: true, nombre: true } },
 } satisfies Prisma.UserSelect;
 
@@ -54,16 +57,32 @@ router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res)
     return res.status(404).json({ error: "No encontrado" });
   }
 
+  // Cambiar el email exige tener verificado el actual: si no, una cuenta mal escrita o
+  // ajena podría "mudarse" a otro correo sin haber probado nunca que es suya.
+  if (email !== undefined && !user.emailVerificado) {
+    return res.status(403).json({ error: "Verifica tu correo actual antes de cambiarlo. Revisa tu bandeja o pide otro enlace." });
+  }
+
   if (email !== undefined && !(await passwordActualValida(passwordActual as string, user.password, res))) {
     return;
   }
 
+  // Un email distinto vuelve a quedar sin verificar, y se le manda la verificación.
+  const cambiaEmail = email !== undefined && email !== user.email;
+
   try {
     const actualizado = await req.db.user.update({
       where: { id: user.id, tenantId: user.tenantId },
-      data: { nombre, email },
+      data: { nombre, email, ...(cambiaEmail && { emailVerificado: null }) },
       select: MI_CUENTA,
     });
+    if (cambiaEmail) {
+      try {
+        await mandarVerificacion(actualizado);
+      } catch (err) {
+        console.error("No se pudo preparar el correo de verificación:", err instanceof Error ? err.message : err);
+      }
+    }
     res.json(actualizado);
   } catch (err) {
     // El email es único en todo CitaFlow (con él se hace login), no solo en el negocio.
@@ -72,6 +91,19 @@ router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res)
     }
     throw err;
   }
+});
+
+// Reenviar el correo de verificación (el aviso de arriba del panel tiene el botón).
+router.post("/reenviar-verificacion", limiteReenvio, async (req, res) => {
+  const user = await yo(req.db, req.userId as string, req.tenantId as string);
+  if (!user) {
+    return res.status(404).json({ error: "No encontrado" });
+  }
+  if (user.emailVerificado) {
+    return res.status(400).json({ error: "Tu correo ya está verificado." });
+  }
+  await mandarVerificacion(user);
+  res.json({ mensaje: `Te mandamos un correo a ${user.email}. Revisa también la carpeta de spam.` });
 });
 
 // Cambia la contraseña y cierra las otras sesiones: verificarToken rechaza los tokens

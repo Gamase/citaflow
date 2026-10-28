@@ -39,3 +39,34 @@ export const limiteContrasena = rateLimit({
   legacyHeaders: false,
   message: { error: "Demasiados intentos con la contraseña actual. Espera 15 minutos e intenta de nuevo." },
 });
+
+// Reenviar el correo de verificación: por usuario (ya tiene sesión). Cuenta todos los
+// intentos: cada uno manda un correo.
+export const limiteReenvio = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  keyGenerator: (req) => `usuario:${req.userId}`,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Ya te mandamos varios correos. Espera 15 minutos antes de pedir otro." },
+});
+
+// "Olvidé mi contraseña": por IP (quien prueba muchos correos) y por correo (quien llena el
+// buzón de alguien). Responden igual exista o no la cuenta, así que no revelan nada.
+export const limiteOlvideIp = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Demasiadas solicitudes desde esta red. Espera 15 minutos e intenta de nuevo." },
+});
+
+export const limiteOlvideCorreo = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  // Va después de validar(): el body ya trae el email limpio.
+  keyGenerator: (req) => `correo:${String(req.body?.email ?? "").toLowerCase()}`,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Ya pediste varios enlaces para ese correo. Espera una hora e intenta de nuevo." },
+});

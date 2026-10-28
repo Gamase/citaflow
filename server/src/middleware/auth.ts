@@ -30,6 +30,8 @@ declare global {
       userId?: string;
       tenantId?: string;
       rol?: Rol;
+      // ¿Ya confirmó su correo? Algunas acciones lo exigen (crear empleados, cambiar el email).
+      verificado?: boolean;
       // Cliente de Prisma atado al negocio del token (ver db.ts). Lo pone verificarToken:
       // solo existe en rutas que pasan por él. Las rutas de negocio lo usan en lugar de `prisma`.
       db: ClienteTenant;
@@ -62,7 +64,7 @@ export async function verificarToken(req: Request, res: Response, next: NextFunc
   // El rol también se lee aquí y no del token: si cambia, cuenta desde la siguiente petición.
   const user = await prisma.user.findFirst({
     where: { id: payload.userId, tenantId: payload.tenantId },
-    select: { rol: true, activo: true, passwordCambiadaEn: true },
+    select: { rol: true, activo: true, passwordCambiadaEn: true, emailVerificado: true },
   });
 
   if (!user) {
@@ -82,6 +84,7 @@ export async function verificarToken(req: Request, res: Response, next: NextFunc
   req.userId = payload.userId;
   req.tenantId = payload.tenantId;
   req.rol = user.rol;
+  req.verificado = user.emailVerificado !== null;
   req.db = clienteDelTenant(payload.tenantId);
   next();
 }

@@ -428,7 +428,7 @@ t "login empleado"                 200 POST /auth/login "" "{\"email\":\"$E_EMAI
 cumple "  login devuelve rol EMPLEADO" "r.user.rol === 'EMPLEADO'"
 TE=$(campo "$RESP" token)
 t "login dueño"                    200 POST /auth/login "" "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}"
-cumple "  login devuelve rol DUENO"  "r.user.rol === 'DUENO'"
+cumple "  login devuelve rol DUENO"  "r.user.rol === 'DUENO' && r.user.verificado === true"
 FUT3=$(node -p "new Date(new Date('$FUT').getTime() + 4*3600e3).toISOString()")
 t "empleado: crear cita"           201 POST /appointments "$TE" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT3\"}"
 CITA3=$(campo "$RESP" id)
@@ -599,6 +599,80 @@ t "reasignar una cita cancelada"   409 PATCH "/appointments/$C_DUENO/atiende" "$
 for c in "$C_EMP" "$C_SIN" "$CITA_P"; do
   t "cancelar cita de esta sección" 200 PATCH "/appointments/$c/estado" "$TA" '{"estado":"CANCELADA"}'
 done
+
+echo "== Correo: verificación y olvidé"
+# Los enlaces llevan un token que en DEV va a la consola (y en Staging, a un buzón). Para
+# probarlos, scripts/tokens-prueba.ts crea tokens conocidos directo en la BD. En `dev` toma la
+# BD de server/.env; en otros entornos solo con DATABASE_URL en la terminal. Si la BD no es la
+# de esta API (el id del usuario A no coincide), esos casos se saltan.
+tk() { USAR_ENV_DE_DEV=$([ "$LABEL" = dev ] && echo 1) npx --no-install tsx scripts/tokens-prueba.ts "$@" 2>/dev/null; }
+uid_de() { node -e 'console.log(JSON.parse(Buffer.from(process.argv[1].split(".")[1], "base64url")).userId)' "$1"; }
+CON_BD=""
+UID_BD=$(tk userid "$A_EMAIL") && [ -n "$UID_BD" ] && [ "$UID_BD" = "$(uid_de "$TA")" ] && CON_BD=1
+
+# Dueño nuevo, sin verificar. Dirección de prueba de Resend: si el server manda correos de
+# verdad (Staging), no rebota a un dominio inventado.
+NUEVO_DUENO="delivered+cf$RANDOM$RANDOM@resend.dev"
+t "registro: negocio nuevo"        201 POST /auth/register "" "{\"nombreNegocio\":\"Prueba de correo\",\"nombreUsuario\":\"Dueño de prueba\",\"email\":\"$NUEVO_DUENO\",\"password\":\"12345678\"}"
+cumple "  entra sin verificar"       "r.user.verificado === false"
+TV=$(campo "$RESP" token)
+t "sin verificar: crear empleado"  403 POST /users "$TV" "{\"nombre\":\"X\",\"email\":\"emp.$RANDOM$RANDOM@ejemplo.test\",\"password\":\"12345678\"}"
+t "sin verificar: cambiar email"   403 PATCH /me "$TV" "{\"email\":\"otro.$RANDOM@ejemplo.test\",\"passwordActual\":\"12345678\"}"
+t "sin verificar: sí usa la app"   200 GET /clients "$TV"
+t "verificar: token inventado"     400 POST /auth/verificar "" '{"token":"no-es-un-token"}'
+t "verificar: sin token"           400 POST /auth/verificar "" '{}'
+t "restablecer: token inventado"   400 POST /auth/restablecer "" '{"token":"no-es-un-token","password":"12345678"}'
+t "olvidé: email inválido"         400 POST /auth/olvide "" '{"email":"no-es-email"}'
+t "olvidé: correo con cuenta"      200 POST /auth/olvide "" "{\"email\":\"$NUEVO_DUENO\"}"
+R_CON_CUENTA=$(cat "$RESP")
+t "olvidé: correo sin cuenta"      200 POST /auth/olvide "" "{\"email\":\"nadie.$RANDOM$RANDOM@ejemplo.test\"}"
+TOTAL=$((TOTAL + 1))
+if [ "$R_CON_CUENTA" = "$(cat "$RESP")" ]; then
+  printf "✅ %-40s %s\n" "  misma respuesta, exista o no" "no revela cuentas"
+else
+  FALLAS=$((FALLAS + 1)); printf "❌ %-40s %s | %s\n" "  misma respuesta, exista o no" "$R_CON_CUENTA" "$(cat "$RESP")"
+fi
+for i in 1 2 3; do
+  t "reenviar verificación ($i de 3)" 200 POST /me/reenviar-verificacion "$TV"
+done
+t "reenviar: 4.º intento"          429 POST /me/reenviar-verificacion "$TV"
+
+if [ -n "$CON_BD" ]; then
+  # El trabajo de "olvidé" corre después de responder: se le da un momento.
+  sleep 1
+  TOTAL=$((TOTAL + 1)); N_RESET=$(tk contar "$NUEVO_DUENO" RESET)
+  if [ "$N_RESET" = "1" ]; then printf "✅ %-40s %s\n" "  olvidé sí generó un enlace" "1 token RESET"; else FALLAS=$((FALLAS + 1)); printf "❌ %-40s %s\n" "  olvidé sí generó un enlace" "tokens RESET: $N_RESET"; fi
+
+  V1=$(tk emitir "$NUEVO_DUENO" VERIFICACION); V2=$(tk emitir "$NUEVO_DUENO" VERIFICACION)
+  t "verificar: enlace reemplazado"  400 POST /auth/verificar "" "{\"token\":\"$V1\"}"
+  t "verificar: enlace vencido"      400 POST /auth/verificar "" "{\"token\":\"$(tk vencido "$NUEVO_DUENO" VERIFICACION)\"}"
+  t "verificar: enlace bueno"        200 POST /auth/verificar "" "{\"token\":\"$V2\"}"
+  t "verificar: mismo enlace otra vez" 400 POST /auth/verificar "" "{\"token\":\"$V2\"}"
+  t "verificado: crea empleados"     201 POST /users "$TV" "{\"nombre\":\"Empleado de prueba\",\"email\":\"emp.$RANDOM$RANDOM@ejemplo.test\",\"password\":\"12345678\"}"
+  cumple "  el empleado nace verificado" "r.rol === 'EMPLEADO' && r.activo === true"
+
+  # Restablecer, con el empleado temporal (no con las cuentas del seed). Su token tiene que
+  # ser de un segundo anterior al cambio (todo se compara en segundos).
+  sleep 1
+  R1=$(tk emitir "$NUEVO_EMAIL" RESET)
+  t "restablecer: contraseña corta"  400 POST /auth/restablecer "" "{\"token\":\"$R1\",\"password\":\"1234567\"}"
+  t "restablecer: enlace bueno"      200 POST /auth/restablecer "" "{\"token\":\"$R1\",\"password\":\"restablecida-123\"}"
+  t "restablecer: mismo enlace"      400 POST /auth/restablecer "" "{\"token\":\"$R1\",\"password\":\"otra-clave-123\"}"
+  t "restablecer: enlace vencido"    400 POST /auth/restablecer "" "{\"token\":\"$(tk vencido "$NUEVO_EMAIL" RESET)\",\"password\":\"otra-clave-123\"}"
+  t "cierra las sesiones viejas"     401 GET /clients "$TN"
+  t "login con la contraseña nueva"  200 POST /auth/login "" "{\"email\":\"$NUEVO_EMAIL\",\"password\":\"restablecida-123\"}"
+  t "desactivarlo"                   200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":false}'
+  ANTES=$(tk contar "$NUEVO_EMAIL" RESET)
+  t "olvidé: usuario desactivado"    200 POST /auth/olvide "" "{\"email\":\"$NUEVO_EMAIL\"}"
+  sleep 1
+  TOTAL=$((TOTAL + 1)); DESPUES=$(tk contar "$NUEVO_EMAIL" RESET)
+  if [ "$ANTES" = "$DESPUES" ]; then printf "✅ %-40s %s\n" "  a un desactivado no se le manda nada" "$DESPUES tokens"; else FALLAS=$((FALLAS + 1)); printf "❌ %-40s %s\n" "  a un desactivado no se le manda nada" "$ANTES → $DESPUES"; fi
+  t "reactivarlo"                    200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":true}'
+  t "regresarle su contraseña"       200 POST /auth/restablecer "" "{\"token\":\"$(tk emitir "$NUEVO_EMAIL" RESET)\",\"password\":\"12345678\"}"
+  TN=$(login "$NUEVO_EMAIL" 12345678)
+else
+  echo "⏭️  Se saltan los casos con enlaces: define DATABASE_URL (la BD de esta API) para correrlos."
+fi
 
 if [ "${PROBAR_429:-}" = "1" ]; then
   echo "== Rate limit (PROBAR_429=1)"
