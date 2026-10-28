@@ -11,7 +11,7 @@ const navItems = [
   { to: "/dashboard/services", label: "Servicios", icon: TagIcon },
   { to: "/dashboard/clients", label: "Clientes", icon: UsersIcon },
   { to: "/dashboard/appointments", label: "Citas", icon: CalendarIcon },
-  { to: "/dashboard/equipo", label: "Equipo", icon: BadgeIcon, soloDueno: true },
+  { to: "/dashboard/team", label: "Equipo", icon: BadgeIcon, soloDueno: true },
 ];
 
 export default function DashboardLayout() {

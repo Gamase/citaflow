@@ -363,6 +363,41 @@ read -r DESDE HASTA <<< "$(node -p 'const n = Date.now(); new Date(n - 16*864e5)
 t "Pendientes de A en ±16 días"    200 GET "/appointments?estado=PENDIENTE&desde=$DESDE&hasta=$HASTA" "$TA"
 cumple "  estado y rango respetados" "r.length === $N_PENDIENTES_A && r.every((c) => c.estado === 'PENDIENTE' && c.fechaHora >= '$DESDE' && c.fechaHora < '$HASTA')"
 
+echo "== Historial del cliente"
+# Candidatos de A con más citas primero, calculados de prisma/seed-data.ts. Se usa el primero
+# que no sea $CLI_A: a ese el script le agrega citas y sus conteos ya no serían los del seed.
+CANDIDATOS=$(npx --no-install tsx -e "
+  import { DATASETS } from './prisma/seed-data';
+  const a = DATASETS['$LABEL']!.tenants[0]!;
+  const lista = a.clientes.map((c, i) => {
+    const citas = a.citas.filter((x) => x.cliente === i);
+    const porEstado: Record<string, number> = {};
+    for (const x of citas) porEstado[x.estado] = (porEstado[x.estado] ?? 0) + 1;
+    const gastado = citas.filter((x) => x.estado === 'COMPLETADA').reduce((s, x) => s + a.servicios[x.servicio]!.precio, 0);
+    return { telefono: c.telefono, nombre: c.nombre, total: citas.length, porEstado, gastado };
+  });
+  lista.sort((x, y) => y.total - x.total);
+  for (const c of lista) console.log(JSON.stringify(c));
+" 2>/dev/null)
+CLI_H=""; ESP_H=""
+while read -r cand; do
+  tel=$(campo - telefono <<< "$cand")
+  id=$(curl -s -m 90 "$API/clients?q=$tel" -H "Authorization: Bearer $TA" | campo - "0.id")
+  if [ -n "$id" ] && [ "$id" != "$CLI_A" ]; then CLI_H=$id; ESP_H=$cand; break; fi
+done <<< "$CANDIDATOS"
+echo "   (cliente: $(campo - nombre <<< "$ESP_H"), $(campo - total <<< "$ESP_H") citas en el seed)"
+t "historial de un cliente"        200 GET "/clients/$CLI_H/historial" "$TA"
+cumple "  conteos = los del seed"    "((e) => r.cliente.id === '$CLI_H' && r.resumen.total === e.total && r.citas.length === e.total && ['PENDIENTE','CONFIRMADA','COMPLETADA','NO_ASISTIO','CANCELADA'].every((s) => r.resumen.porEstado[s] === (e.porEstado[s] ?? 0)))($ESP_H)"
+cumple "  total gastado = atendidas" "Math.abs(r.resumen.totalGastado - $(campo - gastado <<< "$ESP_H")) < 0.005"
+cumple "  de la más reciente a la más vieja" "r.citas.every((c, i, a) => i === 0 || a[i - 1].fechaHora >= c.fechaHora)"
+cumple "  próxima: la activa más cercana" "((ahora) => ((act) => act.length === 0 ? r.resumen.proxima === null : r.resumen.proxima?.id === act[0].id)(r.citas.filter((c) => c.fechaHora >= ahora && ['PENDIENTE','CONFIRMADA'].includes(c.estado)).sort((x, y) => x.fechaHora < y.fechaHora ? -1 : 1)))(new Date(Date.now() - 60e3).toISOString())"
+t "historial: cliente de B"        404 GET "/clients/$CLI_B/historial" "$TA"
+t "historial: cliente inexistente" 404 GET "/clients/$UUID0/historial" "$TA"
+t "historial: id inválido"         400 GET "/clients/no-es-uuid/historial" "$TA"
+t "historial sin token"            401 GET "/clients/$CLI_H/historial"
+t "historial: empleado"            200 GET "/clients/$CLI_H/historial" "$(login "$E_EMAIL" "$E_PASS")"
+cumple "  ve las citas, sin gastado ni precios" "r.resumen.total === $(campo - total <<< "$ESP_H") && r.resumen.totalGastado === null && r.citas.every((c) => !('precio' in c.service))"
+
 echo "== Appointments"
 t "POST sin body"                  400 POST /appointments "$TA"
 t "POST sin serviceId"             400 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"fechaHora\":\"$FUT\"}"

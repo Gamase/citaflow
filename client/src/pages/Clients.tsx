@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/client";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
@@ -287,7 +288,11 @@ export default function Clients() {
                   </Tr>
                 ) : (
                   <Tr key={c.id}>
-                    <Td className="font-medium text-fg">{c.nombre}</Td>
+                    <Td className="font-medium text-fg">
+                      <Link to={`/dashboard/clients/${c.id}`} className="hover:text-teal-700 hover:underline">
+                        {c.nombre}
+                      </Link>
+                    </Td>
                     <Td className="text-muted tabular-nums">{formatTelefono(c.telefono)}</Td>
                     <Td className="text-muted">{c.email ?? <span className="text-faint">—</span>}</Td>
                     <Td align="right">

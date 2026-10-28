@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { EstadoCita, PrismaClient, Prisma } from "@prisma/client";
 import { soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
   busquedaClientesSchema,
   clienteSchema,
+  idParamSchema,
   editarClienteSchema,
   BusquedaClientesInput,
   ClienteInput,
@@ -36,6 +37,55 @@ router.get("/", validar(busquedaClientesSchema, "query"), async (req, res) => {
     },
   });
   res.json(clients);
+});
+
+// Historial: el cliente, sus citas (de la más reciente a la más vieja) y un resumen.
+router.get("/:id/historial", validar(idParamSchema, "params"), async (req, res) => {
+  const tenantId = req.tenantId as string;
+  const dueno = req.rol === "DUENO";
+
+  const client = await prisma.client.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!client) {
+    return res.status(404).json({ error: "Cliente no encontrado" });
+  }
+
+  const [citas, proxima] = await Promise.all([
+    prisma.appointment.findMany({
+      where: { clientId: client.id, tenantId },
+      select: {
+        id: true,
+        fechaHora: true,
+        estado: true,
+        // El precio solo para el dueño: con él el empleado podría sacar el total gastado.
+        service: { select: { nombre: true, precio: dueno } },
+      },
+      orderBy: { fechaHora: "desc" },
+    }),
+    // "Ahora" es un instante, no depende de la zona horaria: lo puede poner el server.
+    prisma.appointment.findFirst({
+      where: { clientId: client.id, tenantId, fechaHora: { gte: new Date() }, estado: { in: ["PENDIENTE", "CONFIRMADA"] } },
+      select: { id: true, fechaHora: true, estado: true, service: { select: { nombre: true } } },
+      orderBy: { fechaHora: "asc" },
+    }),
+  ]);
+
+  // Los 5 estados siempre presentes, en 0 si no hay citas.
+  const porEstado = Object.fromEntries(Object.values(EstadoCita).map((e) => [e, 0])) as Record<EstadoCita, number>;
+  for (const c of citas) porEstado[c.estado]++;
+
+  // Igual que en el Resumen: precio actual del servicio, y null para el empleado.
+  const totalGastado = dueno
+    ? citas
+        .filter((c) => c.estado === "COMPLETADA")
+        .reduce((suma, c) => suma.plus(c.service.precio ?? 0), new Prisma.Decimal(0))
+        .toNumber()
+    : null;
+
+  res.json({
+    cliente: client,
+    citas: citas.map(({ service, ...c }) => ({ ...c, service: { nombre: service.nombre } })),
+    resumen: { total: citas.length, porEstado, proxima, totalGastado },
+  });
 });
 
 router.post("/", validar(clienteSchema), async (req, res) => {

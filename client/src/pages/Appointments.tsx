@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import api from "../api/client";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -106,8 +106,10 @@ export default function Appointments() {
   const [services, setServices] = useState<Service[]>([]);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [clientId, setClientId] = useState("");
+  // ?cliente=<id> (desde el historial del cliente): abre el formulario con ese cliente elegido.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [mostrarForm, setMostrarForm] = useState(() => searchParams.has("cliente"));
+  const [clientId, setClientId] = useState(() => searchParams.get("cliente") ?? "");
   const [serviceId, setServiceId] = useState("");
   const [fechaHora, setFechaHora] = useState("");
   const [porConfirmar, setPorConfirmar] = useState<{ id: string; estado: Destino } | null>(null);
@@ -119,6 +121,11 @@ export default function Appointments() {
   // Subirlo vuelve a pedir todo (después de agendar o cambiar una cita, o al reintentar).
   const [version, setVersion] = useState(0);
   const toast = useToast();
+
+  // Ya se usó: se quita de la URL para que recargar no vuelva a abrir el formulario.
+  useEffect(() => {
+    if (searchParams.has("cliente")) setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // La agenda se vuelve a pedir al cambiar un filtro; si llega una respuesta de un
   // filtro anterior después de la del actual, se ignora.

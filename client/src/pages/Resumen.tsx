@@ -5,6 +5,7 @@ import Badge from "../components/ui/Badge";
 import ErrorState from "../components/ui/ErrorState";
 import PageHeader from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Table";
+import Tarjeta from "../components/ui/Tarjeta";
 import { apiError } from "../components/ui/useToast";
 import { estados, type Estado } from "../lib/estados";
 import { formatFecha, formatHora, formatPrecio } from "../lib/format";
@@ -169,16 +170,6 @@ export default function ResumenPage() {
         </div>
       )}
     </>
-  );
-}
-
-function Tarjeta({ titulo, valor, detalle }: { titulo: string; valor: string; detalle: string }) {
-  return (
-    <Card className="p-5">
-      <p className="text-sm text-muted">{titulo}</p>
-      <p className="mt-1 text-2xl font-semibold text-fg tabular-nums">{valor}</p>
-      <p className="mt-1 text-xs text-muted">{detalle}</p>
-    </Card>
   );
 }
 

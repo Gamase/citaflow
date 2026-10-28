@@ -7,6 +7,7 @@ import Clients from "./pages/Clients";
 import Appointments from "./pages/Appointments";
 import Resumen from "./pages/Resumen";
 import Equipo from "./pages/Equipo";
+import HistorialCliente from "./pages/HistorialCliente";
 import { clearSession, esDueno, getSession, LOGIN_EXPIRADA, tokenVigente } from "./lib/session";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -44,9 +45,10 @@ function App() {
           <Route index element={<Resumen />} />
           <Route path="services" element={<Services />} />
           <Route path="clients" element={<Clients />} />
+          <Route path="clients/:id" element={<HistorialCliente />} />
           <Route path="appointments" element={<Appointments />} />
           <Route
-            path="equipo"
+            path="team"
             element={
               <SoloDueno>
                 <Equipo />

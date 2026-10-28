@@ -15,6 +15,9 @@ const email = z
 
 const id = (campo: string) => z.uuid({ error: `Falta ${campo} o no es válido` });
 
+// Para validar(…, "params") en rutas con /:id.
+export const idParamSchema = z.object({ id: z.uuid({ error: "El id no es válido" }) });
+
 // --- Auth ---
 
 export const registroSchema = z.object({
