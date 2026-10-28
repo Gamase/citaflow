@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { EstadoCita, PrismaClient } from "@prisma/client";
+import { EstadoCita, Prisma, PrismaClient } from "@prisma/client";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
@@ -7,10 +7,12 @@ import {
   estadoSchema,
   filtroCitasSchema,
   reagendarSchema,
+  reasignarSchema,
   CitaInput,
   EstadoInput,
   FiltroCitasInput,
   ReagendarInput,
+  ReasignarInput,
 } from "../schemas";
 
 const router = Router();
@@ -44,16 +46,25 @@ function enElPasado(fecha: Date) {
   return fecha.getTime() < Date.now() - MARGEN_PASADO_MS;
 }
 
-// ¿El horario [inicio, inicio + duración) choca con alguna cita activa del tenant?
+// ¿El horario [inicio, inicio + duración) choca con alguna cita activa de la misma agenda?
+// Cada persona tiene su propia agenda y "Sin asignar" (atiendeId null) es una agenda más:
+// solo chocan citas de la misma persona, o dos sin asignar.
 // Se revisan todas las que empiezan antes de que termine la nueva (ventana de 24 h
 // hacia atrás: ningún servicio dura más que eso). `excluirId` deja fuera a la propia
-// cita al reagendarla, para que no choque consigo misma.
-async function hayChoque(tenantId: string, inicio: Date, duracionMin: number, excluirId?: string) {
+// cita al reagendarla o reasignarla, para que no choque consigo misma.
+async function hayChoque(
+  tenantId: string,
+  inicio: Date,
+  duracionMin: number,
+  atiendeId: string | null,
+  excluirId?: string,
+) {
   const fin = new Date(inicio.getTime() + duracionMin * 60000);
 
   const candidatas = await prisma.appointment.findMany({
     where: {
       tenantId,
+      atiendeId,
       id: excluirId ? { not: excluirId } : undefined,
       estado: { notIn: LIBERAN_HORARIO },
       fechaHora: {
@@ -79,22 +90,61 @@ const NOMBRE_ESTADO: Record<EstadoCita, string> = {
   CANCELADA: "Cancelada",
 };
 
+// Lo que se regresa de cada cita. De quien atiende solo lo necesario para mostrarlo
+// (y `activo`, para avisar si hay que reasignarla).
+const CON_DETALLE = {
+  client: true,
+  service: true,
+  atiende: { select: { id: true, nombre: true, activo: true } },
+} satisfies Prisma.AppointmentInclude;
+
+// Revisa que `atiendeId` sea alguien activo del negocio. null ("Sin asignar") siempre vale.
+// De otro negocio o inexistente → 404 (como clientId/serviceId); inactiva → 400.
+async function validarAtiende(tenantId: string, atiendeId: string | null) {
+  if (atiendeId === null) return { ok: true as const, nombre: null };
+  const persona = await prisma.user.findFirst({ where: { id: atiendeId, tenantId } });
+  if (!persona) {
+    return { ok: false as const, status: 404, error: "Persona no encontrada" };
+  }
+  if (!persona.activo) {
+    return { ok: false as const, status: 400, error: "Esa persona está desactivada; asigna la cita a alguien activo" };
+  }
+  return { ok: true as const, nombre: persona.nombre };
+}
+
+function mensajeChoque(nombre: string | null) {
+  return nombre ? `${nombre} ya tiene una cita en ese horario` : "Ya hay una cita en ese horario";
+}
+
+// Va antes de las rutas con /:id para que "personas" no se lea como un id.
+// Personas activas a las que se les puede asignar una cita. Para todos (el empleado
+// también agenda); sin email ni nada más que lo que pide el select.
+router.get("/personas", async (req, res) => {
+  const personas = await prisma.user.findMany({
+    where: { tenantId: req.tenantId as string, activo: true },
+    select: { id: true, nombre: true, rol: true },
+    orderBy: [{ rol: "asc" }, { nombre: "asc" }],
+  });
+  res.json(personas);
+});
+
 router.get("/", validar(filtroCitasSchema, "query"), async (req, res) => {
-  const { estado, desde, hasta } = res.locals.query as FiltroCitasInput;
+  const { estado, atiende, desde, hasta } = res.locals.query as FiltroCitasInput;
   const appointments = await prisma.appointment.findMany({
     where: {
       tenantId: req.tenantId as string,
       ...(estado && { estado }),
+      ...(atiende === "yo" && { atiendeId: req.userId as string }),
       ...(desde && hasta && { fechaHora: { gte: desde, lt: hasta } }),
     },
-    include: { client: true, service: true },
+    include: CON_DETALLE,
     orderBy: { fechaHora: "asc" },
   });
   res.json(appointments);
 });
 
 router.post("/", validar(citaSchema), async (req, res) => {
-  const { clientId, serviceId, fechaHora } = req.body as CitaInput;
+  const { clientId, serviceId, fechaHora, atiendeId = null } = req.body as CitaInput;
 
   if (enElPasado(fechaHora)) {
     return res.status(400).json({ error: "No puedes agendar una cita en el pasado" });
@@ -116,8 +166,13 @@ router.post("/", validar(citaSchema), async (req, res) => {
     return res.status(404).json({ error: "Cliente no encontrado" });
   }
 
-  if (await hayChoque(req.tenantId as string, fechaHora, service.duracionMin)) {
-    return res.status(409).json({ error: "Ya hay una cita en ese horario" });
+  const persona = await validarAtiende(req.tenantId as string, atiendeId);
+  if (!persona.ok) {
+    return res.status(persona.status).json({ error: persona.error });
+  }
+
+  if (await hayChoque(req.tenantId as string, fechaHora, service.duracionMin, atiendeId)) {
+    return res.status(409).json({ error: mensajeChoque(persona.nombre) });
   }
 
   const appointment = await prisma.appointment.create({
@@ -126,6 +181,9 @@ router.post("/", validar(citaSchema), async (req, res) => {
       tenantId: req.tenantId as string,
       clientId,
       serviceId,
+      atiendeId,
+      // Se congela el precio de hoy: si después cambia el del servicio, esta cita no cambia.
+      precio: service.precio,
     },
   });
 
@@ -142,7 +200,7 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
 
   const appointment = await prisma.appointment.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
-    include: { service: true },
+    include: { service: true, atiende: true },
   });
 
   if (!appointment) {
@@ -157,8 +215,17 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
       .json({ error: `La cita está marcada como "${NOMBRE_ESTADO[actual]}" y ya no se puede reagendar` });
   }
 
-  if (await hayChoque(req.tenantId as string, fechaHora, appointment.service.duracionMin, appointment.id)) {
-    return res.status(409).json({ error: "Ya hay una cita en ese horario" });
+  // Se revisa en la agenda de quien la atiende. El precio no cambia al reagendar.
+  if (
+    await hayChoque(
+      req.tenantId as string,
+      fechaHora,
+      appointment.service.duracionMin,
+      appointment.atiendeId,
+      appointment.id,
+    )
+  ) {
+    return res.status(409).json({ error: mensajeChoque(appointment.atiende?.nombre ?? null) });
   }
 
   // Se condiciona al estado leído: si otra petición la canceló entre medio, no se mueve.
@@ -173,7 +240,63 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
 
   const actualizada = await prisma.appointment.findFirst({
     where: { id: appointment.id, tenantId: req.tenantId as string },
-    include: { client: true, service: true },
+    include: CON_DETALLE,
+  });
+
+  res.json(actualizada);
+});
+
+// Reasignar a otra persona (o a "Sin asignar"): mismas validaciones que al crear y el
+// choque se revisa en la agenda de la nueva persona. Solo en estados no finales.
+router.patch("/:id/atiende", validar(reasignarSchema), async (req, res) => {
+  const { atiendeId } = req.body as ReasignarInput;
+
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: req.params.id, tenantId: req.tenantId as string },
+    include: { service: true },
+  });
+
+  if (!appointment) {
+    return res.status(404).json({ error: "Cita no encontrada" });
+  }
+
+  const actual = appointment.estado;
+  if (TRANSICIONES[actual].length === 0) {
+    return res
+      .status(409)
+      .json({ error: `La cita está marcada como "${NOMBRE_ESTADO[actual]}" y ya no se puede reasignar` });
+  }
+
+  const persona = await validarAtiende(req.tenantId as string, atiendeId);
+  if (!persona.ok) {
+    return res.status(persona.status).json({ error: persona.error });
+  }
+
+  if (
+    await hayChoque(
+      req.tenantId as string,
+      appointment.fechaHora,
+      appointment.service.duracionMin,
+      atiendeId,
+      appointment.id,
+    )
+  ) {
+    return res.status(409).json({ error: mensajeChoque(persona.nombre) });
+  }
+
+  // Se condiciona al estado leído: si otra petición la canceló entre medio, no se reasigna.
+  const { count } = await prisma.appointment.updateMany({
+    where: { id: appointment.id, tenantId: req.tenantId as string, estado: actual },
+    data: { atiendeId },
+  });
+
+  if (count === 0) {
+    return res.status(409).json({ error: "La cita cambió de estado mientras tanto. Recarga e intenta de nuevo." });
+  }
+
+  const actualizada = await prisma.appointment.findFirst({
+    where: { id: appointment.id, tenantId: req.tenantId as string },
+    include: CON_DETALLE,
   });
 
   res.json(actualizada);
@@ -216,7 +339,7 @@ router.patch("/:id/estado", validar(estadoSchema), async (req, res) => {
 
   const actualizada = await prisma.appointment.findFirst({
     where: { id: appointment.id, tenantId: req.tenantId as string },
-    include: { client: true, service: true },
+    include: CON_DETALLE,
   });
 
   res.json(actualizada);

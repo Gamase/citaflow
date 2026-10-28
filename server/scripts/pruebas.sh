@@ -6,9 +6,9 @@
 #
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
 # así que la BD tiene que tener ese seed, de hoy o de ayer (el resumen del dashboard se
-# compara contra las citas que sembró, que van de -14 a +7 días). Deja los datos como estaban, salvo tres citas
-# CANCELADAS ~40 días adelante y dos empleados de prueba activos en el negocio A (nada se
-# borra en CitaFlow; el siguiente seed los limpia).
+# compara contra las citas que sembró, que van de -14 a +7 días). Deja los datos como estaban, salvo unas
+# citas CANCELADAS ~40 días adelante y dos empleados de prueba activos en el negocio A (nada
+# se borra en CitaFlow; el siguiente seed los limpia).
 #
 # Variables opcionales:
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
@@ -396,7 +396,7 @@ t "historial: cliente inexistente" 404 GET "/clients/$UUID0/historial" "$TA"
 t "historial: id inválido"         400 GET "/clients/no-es-uuid/historial" "$TA"
 t "historial sin token"            401 GET "/clients/$CLI_H/historial"
 t "historial: empleado"            200 GET "/clients/$CLI_H/historial" "$(login "$E_EMAIL" "$E_PASS")"
-cumple "  ve las citas, sin gastado ni precios" "r.resumen.total === $(campo - total <<< "$ESP_H") && r.resumen.totalGastado === null && r.citas.every((c) => !('precio' in c.service))"
+cumple "  ve las citas, sin gastado ni precios" "r.resumen.total === $(campo - total <<< "$ESP_H") && r.resumen.totalGastado === null && r.citas.every((c) => !('precio' in c) && !('precio' in c.service))"
 
 echo "== Appointments"
 t "POST sin body"                  400 POST /appointments "$TA"
@@ -545,6 +545,60 @@ t "el negocio de B no cambia"      200 GET /me "$TB"
 cumple "  (aislamiento)"             "r.tenant.nombre !== 'Negocio editado'"
 t "regresar el nombre del negocio" 200 PATCH /tenant "$TA" "{\"nombre\":\"$MI_NEGOCIO\"}"
 cumple "  como estaba"               "r.nombre === '$MI_NEGOCIO'"
+
+echo "== Precio guardado y quién atiende"
+# Cuántas citas del seed atiende el empleado de A (para "Mis citas"), de prisma/seed-data.ts.
+N_CITAS_EMP=$(npx --no-install tsx -e "
+  import { DATASETS } from './prisma/seed-data';
+  console.log(DATASETS['$LABEL']!.tenants[0]!.citas.filter((c) => c.atiende === 'empleado').length);
+" 2>/dev/null)
+t "personas (no se lee como :id)"  200 GET /appointments/personas "$TA"
+cumple "  activas de A, sin email"   "r.some((p) => p.id === '$YO_A') && r.some((p) => p.id === '$EMP_A') && !r.some((p) => p.id === '$EMP_B') && r.every((p) => !('email' in p))"
+t "personas: el empleado también"  200 GET /appointments/personas "$TE"
+
+# Horarios propios de esta sección, ~40 días adelante (después de los de arriba).
+read -r FUT_P FUT_Q <<< "$(node -p "const b = new Date('$FUT').getTime(); new Date(b + 8*3600e3).toISOString() + ' ' + new Date(b + 10*3600e3).toISOString()")"
+t "cita: guarda el precio"         201 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT_P\"}"
+cumple "  = precio del servicio, sin asignar" "Number(r.precio) === Number('$PRECIO_A') && r.atiendeId === null"
+CITA_P=$(campo "$RESP" id)
+t "subir el precio del servicio"   200 PATCH "/services/$SRV_A" "$TA" "{\"precio\":$(node -p "Number('$PRECIO_A') + 100")}"
+t "la cita conserva su precio"     200 GET /appointments "$TA"
+cumple "  precio congelado"          "Number(r.find((c) => c.id === '$CITA_P').precio) === Number('$PRECIO_A')"
+t "ingresos con el servicio caro"  200 GET "/dashboard/resumen?$Q_OK" "$TA"
+cumple "  siguen siendo los del seed" "Math.abs(r.mes.ingresos - JSON.parse('$ESPERADO')[0].ingresos) < 0.005"
+t "historial con el servicio caro" 200 GET "/clients/$CLI_H/historial" "$TA"
+cumple "  total gastado sin cambio"  "Math.abs(r.resumen.totalGastado - $(campo - gastado <<< "$ESP_H")) < 0.005"
+t "regresar el precio"             200 PATCH "/services/$SRV_A" "$TA" "{\"precio\":$PRECIO_A}"
+
+CITA_BASE="\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT_Q\""
+t "atiende: no es uuid"            400 POST /appointments "$TA" "{$CITA_BASE,\"atiendeId\":\"abc\"}"
+t "atiende: persona de B"          404 POST /appointments "$TA" "{$CITA_BASE,\"atiendeId\":\"$EMP_B\"}"
+t "desactivar al empleado nuevo"   200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":false}'
+t "atiende: persona inactiva"      400 POST /appointments "$TA" "{$CITA_BASE,\"atiendeId\":\"$NUEVO\"}"
+t "reactivarlo"                    200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":true}'
+t "cita para el dueño"             201 POST /appointments "$TA" "{$CITA_BASE,\"atiendeId\":\"$YO_A\"}"
+C_DUENO=$(campo "$RESP" id)
+t "misma hora, mismo dueño"        409 POST /appointments "$TA" "{$CITA_BASE,\"atiendeId\":\"$YO_A\"}"
+t "misma hora, el empleado"        201 POST /appointments "$TE" "{$CITA_BASE,\"atiendeId\":\"$EMP_A\"}"
+C_EMP=$(campo "$RESP" id)
+t "misma hora, sin asignar"        201 POST /appointments "$TA" "{$CITA_BASE}"
+C_SIN=$(campo "$RESP" id)
+t "otra sin asignar a esa hora"    409 POST /appointments "$TA" "{$CITA_BASE}"
+t "reasignar a quien está ocupado" 409 PATCH "/appointments/$C_EMP/atiende" "$TA" "{\"atiendeId\":\"$YO_A\"}"
+t "reasignar a Sin asignar ocupado" 409 PATCH "/appointments/$C_EMP/atiende" "$TA" '{"atiendeId":null}'
+t "reasignar a persona de B"       404 PATCH "/appointments/$C_SIN/atiende" "$TA" "{\"atiendeId\":\"$EMP_B\"}"
+t "reasignar sin la llave"         400 PATCH "/appointments/$C_SIN/atiende" "$TA" '{}'
+t "empleado reasigna a uno libre"  200 PATCH "/appointments/$C_SIN/atiende" "$TE" "{\"atiendeId\":\"$NUEVO\"}"
+cumple "  queda con esa persona"     "r.atiende.id === '$NUEVO' && r.atiende.activo === true"
+t "reasignar cita de otro negocio" 404 PATCH "/appointments/$C_SIN/atiende" "$TB" '{"atiendeId":null}'
+t "Mis citas (empleado)"           200 GET "/appointments?atiende=yo" "$TE"
+cumple "  solo las suyas"            "r.length >= $N_CITAS_EMP + 1 && r.every((c) => c.atiende && c.atiende.id === '$EMP_A') && r.some((c) => c.id === '$C_EMP')"
+t "filtro atiende inválido"        400 GET "/appointments?atiende=otro" "$TA"
+t "cancelar la del dueño"          200 PATCH "/appointments/$C_DUENO/estado" "$TA" '{"estado":"CANCELADA"}'
+t "reasignar una cita cancelada"   409 PATCH "/appointments/$C_DUENO/atiende" "$TA" "{\"atiendeId\":\"$EMP_A\"}"
+for c in "$C_EMP" "$C_SIN" "$CITA_P"; do
+  t "cancelar cita de esta sección" 200 PATCH "/appointments/$c/estado" "$TA" '{"estado":"CANCELADA"}'
+done
 
 if [ "${PROBAR_429:-}" = "1" ]; then
   echo "== Rate limit (PROBAR_429=1)"

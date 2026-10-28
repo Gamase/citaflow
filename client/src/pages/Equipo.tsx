@@ -16,6 +16,8 @@ interface Usuario {
   email: string;
   rol: Rol;
   activo: boolean;
+  // Citas próximas (Pendientes o Confirmadas) que atiende esta persona.
+  _count: { citasQueAtiende: number };
 }
 
 // Lo que se está haciendo en una fila: editar sus datos, asignar contraseña nueva,
@@ -280,7 +282,11 @@ export default function Equipo() {
                       ) : m?.tipo === "activo" ? (
                         <div className="flex items-center justify-end gap-3">
                           <span className="text-sm text-fg">
-                            {u.activo ? "¿Quitarle el acceso?" : "¿Devolverle el acceso?"}
+                            {!u.activo
+                              ? "¿Devolverle el acceso?"
+                              : u._count.citasQueAtiende > 0
+                                ? `Tiene ${u._count.citasQueAtiende} ${u._count.citasQueAtiende === 1 ? "cita próxima; seguirá" : "citas próximas; seguirán"} a su nombre hasta que las reasignes. ¿Quitarle el acceso?`
+                                : "¿Quitarle el acceso?"}
                           </span>
                           <Button size="sm" variant="secondary" onClick={() => setModo(null)} autoFocus>
                             No

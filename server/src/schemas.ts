@@ -120,16 +120,23 @@ export const editarClienteSchema = clienteSchema
 
 // --- Appointments ---
 
+// Quién atiende: id de una persona del negocio, o null = "Sin asignar".
+const atiendeId = z.uuid({ error: "La persona que atiende no es válida" }).nullable();
+
 export const citaSchema = z.object({
   clientId: id("el cliente"),
   serviceId: id("el servicio"),
   fechaHora: z
     .string({ error: "La fecha y hora es obligatoria" })
     .pipe(z.coerce.date({ error: "La fecha y hora no es válida" })),
+  atiendeId: atiendeId.optional(),
 });
 
 // Reagendar solo mueve la fecha: cambiar de servicio es cancelar y agendar otra.
 export const reagendarSchema = citaSchema.pick({ fechaHora: true });
+
+// Reasignar: a otra persona o a "Sin asignar" (null). La llave es obligatoria.
+export const reasignarSchema = z.object({ atiendeId });
 
 export const estadoSchema = z.object({
   estado: z.enum(EstadoCita, { error: "Estado no válido" }),
@@ -179,6 +186,8 @@ export const busquedaClientesSchema = z.object({
 export const filtroCitasSchema = z
   .object({
     estado: z.enum(EstadoCita, { error: "Estado no válido" }).optional(),
+    // "Mis citas": el server pone el id de quien hace la petición; el front no lo manda.
+    atiende: z.literal("yo", { error: 'atiende solo acepta "yo"' }).optional(),
     desde: fecha("desde").optional(),
     hasta: fecha("hasta").optional(),
   })
@@ -203,6 +212,7 @@ export type EditarServicioInput = z.infer<typeof editarServicioSchema>;
 export type ClienteInput = z.infer<typeof clienteSchema>;
 export type EditarClienteInput = z.infer<typeof editarClienteSchema>;
 export type CitaInput = z.infer<typeof citaSchema>;
+export type ReasignarInput = z.infer<typeof reasignarSchema>;
 export type ReagendarInput = z.infer<typeof reagendarSchema>;
 export type EstadoInput = z.infer<typeof estadoSchema>;
 export type ResumenInput = z.infer<typeof resumenSchema>;

@@ -80,6 +80,10 @@ async function main() {
       clients.push(await prisma.client.create({ data: { ...c, tenantId: tenant.id } }));
     }
 
+    // Quién atiende cada cita: el dueño o el empleado recién creados (o nadie).
+    const usuarios = await prisma.user.findMany({ where: { tenantId: tenant.id } });
+    const idDe = { dueno: usuarios.find((u) => u.rol === "DUENO")!.id, empleado: usuarios.find((u) => u.rol === "EMPLEADO")!.id };
+
     await prisma.appointment.createMany({
       data: citasConFecha(t, ahora).map((c) => ({
         tenantId: tenant.id,
@@ -87,6 +91,9 @@ async function main() {
         serviceId: services[c.servicio]!.id,
         fechaHora: c.fechaHora,
         estado: c.estado,
+        // Como hace la API al agendar: el precio del servicio queda guardado en la cita.
+        precio: t.servicios[c.servicio]!.precio,
+        atiendeId: c.atiende ? idDe[c.atiende] : null,
       })),
     });
 
@@ -129,12 +136,15 @@ async function imprimirDatosDeDemo(
     console.log(`    (${citaB.client.nombre}, ${formatoTijuana.format(citaB.fechaHora)}, Confirmada)`);
   }
 
-  // Horario ocupado en A: una cita activa a la misma hora que una Cancelada.
+  // Horario ocupado en A: una cita activa sin asignar a la misma hora que una Cancelada
+  // (sin asignar para que el 409 salga desde el formulario con "Sin asignar").
   const citasA = citasConFecha(a.datos, ahora);
+  const activa = (c: (typeof citasA)[number]) => !["CANCELADA", "NO_ASISTIO"].includes(c.estado);
   const ocupada = citasA.find(
     (c) =>
       c.fechaHora > ahora &&
-      !["CANCELADA", "NO_ASISTIO"].includes(c.estado) &&
+      activa(c) &&
+      !c.atiende &&
       citasA.some((o) => o.estado === "CANCELADA" && o.fechaHora.getTime() === c.fechaHora.getTime()),
   );
   if (ocupada) {
@@ -142,7 +152,22 @@ async function imprimirDatosDeDemo(
     console.log(
       `  - Horario ocupado en ${a.datos.nombre}: ${formatoTijuana.format(ocupada.fechaHora)} ` +
         `(${servicio.nombre}, ${servicio.duracionMin} min, ${a.datos.clientes[ocupada.cliente]!.nombre}). ` +
-        `Agendar ahí → 409; a la misma hora hay una Cancelada que ya no ocupa.`,
+        `Agendar ahí "Sin asignar" → 409; a la misma hora hay una Cancelada que ya no ocupa.`,
+    );
+  }
+
+  // Dos citas activas a la misma hora en A, de personas distintas: no chocan.
+  const pareja = citasA.find(
+    (c) =>
+      c.fechaHora > ahora &&
+      activa(c) &&
+      c.atiende === "dueno" &&
+      citasA.some((o) => o.atiende === "empleado" && activa(o) && o.fechaHora.getTime() === c.fechaHora.getTime()),
+  );
+  if (pareja) {
+    console.log(
+      `  - Misma hora, dos personas en ${a.datos.nombre}: ${formatoTijuana.format(pareja.fechaHora)} ` +
+        `(una del dueño y otra de ${a.datos.empleado.nombre}). No chocan: cada persona tiene su agenda.`,
     );
   }
 

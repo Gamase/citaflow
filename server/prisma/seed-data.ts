@@ -17,7 +17,8 @@ export interface Cliente {
 }
 
 // Una cita a `dias` de hoy, a `hora`:`minuto` en hora de Tijuana. `cliente` y `servicio`
-// son índices en las listas del negocio.
+// son índices en las listas del negocio. `atiende`: el dueño o el empleado del negocio;
+// sin él, la cita queda "Sin asignar".
 export interface CitaSemilla {
   dias: number;
   hora: number;
@@ -25,6 +26,7 @@ export interface CitaSemilla {
   estado: EstadoCita;
   cliente: number;
   servicio: number;
+  atiende?: "dueno" | "empleado";
 }
 
 export interface Negocio {
@@ -46,65 +48,70 @@ export interface Dataset {
 // --- Agendas de Dev y Staging ---
 //
 // Mismas reglas que la API: Atendida y No asistió solo en el pasado; Cancelada y No asistió
-// liberan el horario. En un mismo día las citas empiezan con 2 h o más de separación
-// (ningún servicio de estos datos dura más), salvo las parejas Cancelada + activa a la misma
-// hora, que están a propósito. Todo cae entre -14 y +7 días (pruebas.sh revisa ±16).
+// liberan el horario; el choque es por persona ("Sin asignar" es una agenda más). En un
+// mismo día las citas empiezan con 2 h o más de separación (ningún servicio de estos datos
+// dura más), salvo las parejas a la misma hora, que están a propósito: Cancelada + activa,
+// o dos activas de personas distintas. Todo cae entre -14 y +7 días (pruebas.sh revisa ±16).
 //
 // Agenda del negocio A. Lo que se luce en la demo:
 // - Hoy: Atendidas a las 9:00 y 11:00, una Pendiente a las 13:00 y la Confirmada de las 18:00.
 // - Ayer: una Pendiente sin resolver (se ven "Marcar atendida" / "No asistió").
-// - Mañana 10:00: horario ocupado (Confirmada) junto a una Cancelada → el 409 por choque.
+// - Mañana 10:00: horario ocupado (Confirmada, sin asignar) junto a una Cancelada → el 409
+//   por choque al agendar ahí "Sin asignar".
+// - Pasado mañana 12:00: dos Confirmadas a la misma hora, una del dueño y otra del empleado
+//   → no chocan (cada persona tiene su agenda).
 const AGENDA_A: CitaSemilla[] = [
-  { dias: -14, hora: 10, estado: "COMPLETADA", cliente: 0, servicio: 1 },
-  { dias: -13, hora: 12, estado: "COMPLETADA", cliente: 1, servicio: 0 },
+  { dias: -14, hora: 10, estado: "COMPLETADA", cliente: 0, servicio: 1, atiende: "dueno" },
+  { dias: -13, hora: 12, estado: "COMPLETADA", cliente: 1, servicio: 0, atiende: "empleado" },
   { dias: -12, hora: 16, estado: "NO_ASISTIO", cliente: 2, servicio: 4 },
   { dias: -11, hora: 10, estado: "CANCELADA", cliente: 3, servicio: 2 },
-  { dias: -10, hora: 11, estado: "COMPLETADA", cliente: 4, servicio: 3 },
-  { dias: -8, hora: 10, estado: "NO_ASISTIO", cliente: 6, servicio: 0 },
-  { dias: -7, hora: 13, estado: "COMPLETADA", cliente: 7, servicio: 4 },
+  { dias: -10, hora: 11, estado: "COMPLETADA", cliente: 4, servicio: 3, atiende: "dueno" },
+  { dias: -8, hora: 10, estado: "NO_ASISTIO", cliente: 6, servicio: 0, atiende: "empleado" },
+  { dias: -7, hora: 13, estado: "COMPLETADA", cliente: 7, servicio: 4, atiende: "empleado" },
   { dias: -6, hora: 10, estado: "CANCELADA", cliente: 8, servicio: 1 },
-  { dias: -5, hora: 12, estado: "COMPLETADA", cliente: 9, servicio: 2 },
+  { dias: -5, hora: 12, estado: "COMPLETADA", cliente: 9, servicio: 2, atiende: "dueno" },
   { dias: -4, hora: 16, estado: "COMPLETADA", cliente: 0, servicio: 0 },
   { dias: -3, hora: 11, estado: "NO_ASISTIO", cliente: 1, servicio: 3 },
-  { dias: -2, hora: 10, estado: "COMPLETADA", cliente: 2, servicio: 1 },
-  { dias: -1, hora: 12, estado: "PENDIENTE", cliente: 3, servicio: 4 },
-  { dias: -1, hora: 16, estado: "CONFIRMADA", cliente: 4, servicio: 0 },
-  { dias: 0, hora: 9, estado: "COMPLETADA", cliente: 5, servicio: 1 },
-  { dias: 0, hora: 11, estado: "COMPLETADA", cliente: 6, servicio: 0 },
-  { dias: 0, hora: 13, estado: "PENDIENTE", cliente: 7, servicio: 4 },
-  { dias: 0, hora: 18, estado: "CONFIRMADA", cliente: 8, servicio: 1 },
+  { dias: -2, hora: 10, estado: "COMPLETADA", cliente: 2, servicio: 1, atiende: "empleado" },
+  { dias: -1, hora: 12, estado: "PENDIENTE", cliente: 3, servicio: 4, atiende: "empleado" },
+  { dias: -1, hora: 16, estado: "CONFIRMADA", cliente: 4, servicio: 0, atiende: "dueno" },
+  { dias: 0, hora: 9, estado: "COMPLETADA", cliente: 5, servicio: 1, atiende: "dueno" },
+  { dias: 0, hora: 11, estado: "COMPLETADA", cliente: 6, servicio: 0, atiende: "empleado" },
+  { dias: 0, hora: 13, estado: "PENDIENTE", cliente: 7, servicio: 4, atiende: "empleado" },
+  { dias: 0, hora: 18, estado: "CONFIRMADA", cliente: 8, servicio: 1, atiende: "dueno" },
   { dias: 1, hora: 10, estado: "CANCELADA", cliente: 9, servicio: 3 },
   { dias: 1, hora: 10, estado: "CONFIRMADA", cliente: 0, servicio: 3 },
-  { dias: 1, hora: 16, estado: "PENDIENTE", cliente: 1, servicio: 1 },
-  { dias: 2, hora: 12, estado: "CONFIRMADA", cliente: 2, servicio: 2 },
-  { dias: 3, hora: 10, estado: "PENDIENTE", cliente: 3, servicio: 0 },
-  { dias: 5, hora: 11, estado: "PENDIENTE", cliente: 4, servicio: 4 },
+  { dias: 1, hora: 16, estado: "PENDIENTE", cliente: 1, servicio: 1, atiende: "empleado" },
+  { dias: 2, hora: 12, estado: "CONFIRMADA", cliente: 2, servicio: 2, atiende: "dueno" },
+  { dias: 2, hora: 12, estado: "CONFIRMADA", cliente: 5, servicio: 0, atiende: "empleado" },
+  { dias: 3, hora: 10, estado: "PENDIENTE", cliente: 3, servicio: 0, atiende: "empleado" },
+  { dias: 5, hora: 11, estado: "PENDIENTE", cliente: 4, servicio: 4, atiende: "dueno" },
   { dias: 7, hora: 10, estado: "PENDIENTE", cliente: 6, servicio: 0 },
 ];
 
 // Agenda del negocio B: distinta a la de A (otros conteos y otra tasa de no asistencia),
 // para que en el Resumen se note que cada negocio ve solo lo suyo.
 const AGENDA_B: CitaSemilla[] = [
-  { dias: -14, hora: 11, estado: "COMPLETADA", cliente: 0, servicio: 0 },
+  { dias: -14, hora: 11, estado: "COMPLETADA", cliente: 0, servicio: 0, atiende: "dueno" },
   { dias: -13, hora: 15, estado: "NO_ASISTIO", cliente: 1, servicio: 2 },
-  { dias: -12, hora: 10, estado: "COMPLETADA", cliente: 2, servicio: 1 },
+  { dias: -12, hora: 10, estado: "COMPLETADA", cliente: 2, servicio: 1, atiende: "empleado" },
   { dias: -10, hora: 12, estado: "COMPLETADA", cliente: 3, servicio: 3 },
   { dias: -9, hora: 16, estado: "CANCELADA", cliente: 4, servicio: 0 },
   { dias: -8, hora: 11, estado: "COMPLETADA", cliente: 5, servicio: 4 },
   { dias: -7, hora: 10, estado: "NO_ASISTIO", cliente: 6, servicio: 1 },
-  { dias: -6, hora: 14, estado: "COMPLETADA", cliente: 7, servicio: 0 },
+  { dias: -6, hora: 14, estado: "COMPLETADA", cliente: 7, servicio: 0, atiende: "empleado" },
   { dias: -4, hora: 10, estado: "COMPLETADA", cliente: 8, servicio: 2 },
   { dias: -3, hora: 12, estado: "CANCELADA", cliente: 9, servicio: 3 },
-  { dias: -2, hora: 15, estado: "COMPLETADA", cliente: 0, servicio: 4 },
+  { dias: -2, hora: 15, estado: "COMPLETADA", cliente: 0, servicio: 4, atiende: "dueno" },
   { dias: -1, hora: 14, estado: "PENDIENTE", cliente: 1, servicio: 0 },
-  { dias: 0, hora: 9, estado: "COMPLETADA", cliente: 2, servicio: 0 },
+  { dias: 0, hora: 9, estado: "COMPLETADA", cliente: 2, servicio: 0, atiende: "dueno" },
   { dias: 0, hora: 11, estado: "COMPLETADA", cliente: 3, servicio: 2 },
-  { dias: 0, hora: 13, estado: "PENDIENTE", cliente: 4, servicio: 1 },
+  { dias: 0, hora: 13, estado: "PENDIENTE", cliente: 4, servicio: 1, atiende: "empleado" },
   { dias: 0, hora: 18, estado: "CONFIRMADA", cliente: 5, servicio: 0 },
   { dias: 1, hora: 12, estado: "CONFIRMADA", cliente: 6, servicio: 3 },
-  { dias: 2, hora: 10, estado: "PENDIENTE", cliente: 7, servicio: 1 },
+  { dias: 2, hora: 10, estado: "PENDIENTE", cliente: 7, servicio: 1, atiende: "empleado" },
   { dias: 3, hora: 16, estado: "CANCELADA", cliente: 8, servicio: 4 },
-  { dias: 4, hora: 11, estado: "PENDIENTE", cliente: 9, servicio: 0 },
+  { dias: 4, hora: 11, estado: "PENDIENTE", cliente: 9, servicio: 0, atiende: "dueno" },
   { dias: 6, hora: 10, estado: "CONFIRMADA", cliente: 0, servicio: 2 },
 ];
 
@@ -367,21 +374,24 @@ export function validarNegocio(negocio: Negocio, ahora = new Date()): string[] {
   }
   if (!indicesOk) return errores;
 
-  // Choques entre citas que ocupan horario.
-  const activas = citas
-    .filter((c) => !LIBERAN_HORARIO.includes(c.estado))
-    .map((c) => {
-      const inicio = c.fechaHora.getTime();
-      return { c, inicio, fin: inicio + negocio.servicios[c.servicio]!.duracionMin * 60000 };
-    })
-    .sort((a, b) => a.inicio - b.inicio);
-  for (let i = 1; i < activas.length; i++) {
-    const anterior = activas[i - 1]!;
-    const actual = activas[i]!;
-    if (actual.inicio < anterior.fin) {
-      errores.push(
-        `${n}: choque entre la cita del día ${anterior.c.dias} ${hhmm(anterior.c)} y la del día ${actual.c.dias} ${hhmm(actual.c)}`,
-      );
+  // Choques entre citas que ocupan horario, por persona: cada una tiene su propia agenda
+  // y las "Sin asignar" son una agenda más (igual que hayChoque en la API).
+  for (const agenda of ["dueno", "empleado", undefined] as const) {
+    const activas = citas
+      .filter((c) => c.atiende === agenda && !LIBERAN_HORARIO.includes(c.estado))
+      .map((c) => {
+        const inicio = c.fechaHora.getTime();
+        return { c, inicio, fin: inicio + negocio.servicios[c.servicio]!.duracionMin * 60000 };
+      })
+      .sort((a, b) => a.inicio - b.inicio);
+    for (let i = 1; i < activas.length; i++) {
+      const anterior = activas[i - 1]!;
+      const actual = activas[i]!;
+      if (actual.inicio < anterior.fin) {
+        errores.push(
+          `${n}: choque (${agenda ?? "sin asignar"}) entre la cita del día ${anterior.c.dias} ${hhmm(anterior.c)} y la del día ${actual.c.dias} ${hhmm(actual.c)}`,
+        );
+      }
     }
   }
 

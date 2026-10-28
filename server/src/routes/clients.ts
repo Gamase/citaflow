@@ -57,6 +57,7 @@ router.get("/:id/historial", validar(idParamSchema, "params"), async (req, res) 
         fechaHora: true,
         estado: true,
         // El precio solo para el dueño: con él el empleado podría sacar el total gastado.
+        precio: dueno,
         service: { select: { nombre: true, precio: dueno } },
       },
       orderBy: { fechaHora: "desc" },
@@ -73,17 +74,19 @@ router.get("/:id/historial", validar(idParamSchema, "params"), async (req, res) 
   const porEstado = Object.fromEntries(Object.values(EstadoCita).map((e) => [e, 0])) as Record<EstadoCita, number>;
   for (const c of citas) porEstado[c.estado]++;
 
-  // Igual que en el Resumen: precio actual del servicio, y null para el empleado.
+  // Igual que en el Resumen: precio guardado en la cita, y null para el empleado.
+  // `?? service.precio`: solo mientras la columna sea opcional (ver dashboard.ts).
   const totalGastado = dueno
     ? citas
         .filter((c) => c.estado === "COMPLETADA")
-        .reduce((suma, c) => suma.plus(c.service.precio ?? 0), new Prisma.Decimal(0))
+        .reduce((suma, c) => suma.plus(c.precio ?? c.service.precio ?? 0), new Prisma.Decimal(0))
         .toNumber()
     : null;
 
   res.json({
     cliente: client,
-    citas: citas.map(({ service, ...c }) => ({ ...c, service: { nombre: service.nombre } })),
+    // El precio solo se usó para el total: no se manda en la lista (ni al dueño, no lo pide la vista).
+    citas: citas.map(({ service, precio: _precio, ...c }) => ({ ...c, service: { nombre: service.nombre } })),
     resumen: { total: citas.length, porEstado, proxima, totalGastado },
   });
 });

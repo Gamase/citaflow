@@ -48,6 +48,9 @@ model User {
 
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  // Citas asignadas a esta persona (Appointment.atiendeId).
+  citasQueAtiende Appointment[]
 }
 
 model Service {
@@ -92,4 +95,14 @@ model Appointment {
 
   serviceId String
   service   Service  @relation(fields: [serviceId], references: [id])
+
+  // Precio del servicio al momento de agendar: si después cambia el del servicio, esta
+  // cita conserva el suyo. Opcional solo por la transición (ver migración); el código
+  // nuevo siempre lo llena.
+  precio    Decimal?
+
+  // Quién atiende la cita (dueño o empleado del mismo negocio). null = "Sin asignar".
+  // Cada persona tiene su propia agenda: el choque de horario se revisa por persona.
+  atiendeId String?
+  atiende   User?    @relation(fields: [atiendeId], references: [id])
 }

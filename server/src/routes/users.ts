@@ -33,7 +33,17 @@ const USUARIO = {
 router.get("/", async (req, res) => {
   const users = await prisma.user.findMany({
     where: { tenantId: req.tenantId as string },
-    select: USUARIO,
+    // Citas próximas que atiende: al desactivar a alguien, Equipo avisa cuántas hay que reasignar.
+    select: {
+      ...USUARIO,
+      _count: {
+        select: {
+          citasQueAtiende: {
+            where: { fechaHora: { gte: new Date() }, estado: { in: ["PENDIENTE", "CONFIRMADA"] } },
+          },
+        },
+      },
+    },
     // El dueño primero (DUENO va antes que EMPLEADO en el enum), luego por antigüedad.
     orderBy: [{ rol: "asc" }, { creadoEn: "asc" }],
   });

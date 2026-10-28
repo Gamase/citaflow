@@ -12,6 +12,7 @@ import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
 import { estados, type Estado } from "../lib/estados";
 import { formatDatetimeLocal, formatFecha, formatHora } from "../lib/format";
+import { miUserId } from "../lib/session";
 
 interface Client {
   id: string;
@@ -23,12 +24,20 @@ interface Service {
   nombre: string;
 }
 
+// Personas activas a las que se les puede asignar una cita (GET /appointments/personas).
+interface Persona {
+  id: string;
+  nombre: string;
+}
+
 interface Appointment {
   id: string;
   fechaHora: string;
   estado: string;
   client: Client;
   service: Service;
+  // null = "Sin asignar". `activo: false`: la persona fue desactivada y hay que reasignarla.
+  atiende: { id: string; nombre: string; activo: boolean } | null;
 }
 
 // Estados a los que se puede llegar con una acción (a PENDIENTE nunca se vuelve)
@@ -118,6 +127,12 @@ export default function Appointments() {
   const [reagendando, setReagendando] = useState<{ id: string; fechaHora: string } | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<Estado | "">("");
   const [rango, setRango] = useState<Rango>("todas");
+  const [soloMias, setSoloMias] = useState(false);
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [atiendeId, setAtiendeId] = useState("");
+  // Cita que se está reasignando y a quién ("" = Sin asignar).
+  const [reasignando, setReasignando] = useState<{ id: string; atiendeId: string } | null>(null);
+  const yo = miUserId();
   // Subirlo vuelve a pedir todo (después de agendar o cambiar una cita, o al reintentar).
   const [version, setVersion] = useState(0);
   const toast = useToast();
@@ -132,7 +147,9 @@ export default function Appointments() {
   useEffect(() => {
     let vigente = true;
     api
-      .get("/appointments", { params: { estado: filtroEstado || undefined, ...fechasDelRango(rango) } })
+      .get("/appointments", {
+        params: { estado: filtroEstado || undefined, atiende: soloMias ? "yo" : undefined, ...fechasDelRango(rango) },
+      })
       .then((res) => {
         if (!vigente) return;
         setAppointments(res.data);
@@ -143,9 +160,9 @@ export default function Appointments() {
     return () => {
       vigente = false;
     };
-  }, [filtroEstado, rango, version]);
+  }, [filtroEstado, rango, soloMias, version]);
 
-  // Clientes y servicios para los selects del formulario: siempre completos, sin filtros.
+  // Clientes, servicios y personas para los selects: siempre completos, sin filtros.
   useEffect(() => {
     api
       .get("/clients")
@@ -155,17 +172,22 @@ export default function Appointments() {
       .get("/services")
       .then((res) => setServices(res.data))
       .catch((err) => setErrorCarga(apiError(err, "No se pudieron cargar los servicios.")));
+    api
+      .get("/appointments/personas")
+      .then((res) => setPersonas(res.data))
+      .catch((err) => setErrorCarga(apiError(err, "No se pudo cargar quién atiende.")));
   }, [version]);
 
   function load() {
     setVersion((v) => v + 1);
   }
 
-  const hayFiltros = filtroEstado !== "" || rango !== "todas";
+  const hayFiltros = filtroEstado !== "" || rango !== "todas" || soloMias;
 
   function quitarFiltros() {
     setFiltroEstado("");
     setRango("todas");
+    setSoloMias(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -175,10 +197,12 @@ export default function Appointments() {
         clientId,
         serviceId,
         fechaHora: new Date(fechaHora).toISOString(),
+        atiendeId: atiendeId || null,
       });
       setClientId("");
       setServiceId("");
       setFechaHora("");
+      setAtiendeId("");
       setMostrarForm(false);
       toast.success("Cita agendada.");
       load();
@@ -215,8 +239,23 @@ export default function Appointments() {
     }
   }
 
+  async function reasignar(id: string, nuevo: string) {
+    setCambiando(id);
+    try {
+      await api.patch(`/appointments/${id}/atiende`, { atiendeId: nuevo || null });
+      setReasignando(null);
+      toast.success("Cita reasignada.");
+      load();
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo reasignar la cita."));
+    } finally {
+      setCambiando(null);
+    }
+  }
+
   function elegirAccion(id: string, estado: Destino) {
     setReagendando(null);
+    setReasignando(null);
     if (ACCION[estado].pregunta) {
       setPorConfirmar({ id, estado });
     } else {
@@ -258,7 +297,7 @@ export default function Appointments() {
                 .
               </p>
             )}
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Cliente">
                 {(id) => (
                   <Select id={id} value={clientId} onChange={(e) => setClientId(e.target.value)} required>
@@ -292,6 +331,13 @@ export default function Appointments() {
                     onChange={(e) => setFechaHora(e.target.value)}
                     required
                   />
+                )}
+              </Field>
+              <Field label="Atiende" hint="Cada persona tiene su propia agenda.">
+                {(id) => (
+                  <Select id={id} value={atiendeId} onChange={(e) => setAtiendeId(e.target.value)}>
+                    <OpcionesPersonas personas={personas} yo={yo} />
+                  </Select>
                 )}
               </Field>
             </div>
@@ -333,6 +379,14 @@ export default function Appointments() {
               </option>
             ))}
           </Select>
+          <Button
+            size="sm"
+            variant={soloMias ? "primary" : "secondary"}
+            aria-pressed={soloMias}
+            onClick={() => setSoloMias((v) => !v)}
+          >
+            Mis citas
+          </Button>
         </div>
         {cargando ? (
           <p className="px-4 py-14 text-center text-sm text-muted">Cargando citas…</p>
@@ -379,6 +433,7 @@ export default function Appointments() {
                 const moviendo = reagendando?.id === a.id ? reagendando : null;
                 const nuevaFecha = moviendo?.fechaHora ? new Date(moviendo.fechaHora).toISOString() : null;
                 const mismaFecha = moviendo?.fechaHora === formatDatetimeLocal(a.fechaHora);
+                const cambiandoA = reasignando?.id === a.id ? reasignando : null;
                 return (
                   <Tr key={a.id} className={atenuada ? "text-faint" : ""}>
                     <Td>
@@ -386,6 +441,24 @@ export default function Appointments() {
                         {a.client.nombre}
                       </p>
                       <p className={`text-xs ${atenuada ? "text-faint" : "text-muted"}`}>{a.service.nombre}</p>
+                      <p className={`mt-0.5 text-xs ${atenuada ? "text-faint" : "text-muted"}`}>
+                        Atiende:{" "}
+                        {a.atiende === null ? (
+                          <span className="italic">Sin asignar</span>
+                        ) : (
+                          <>
+                            <span className={a.atiende.id === yo ? "font-medium text-teal-700" : "text-fg"}>
+                              {a.atiende.id === yo ? "Tú" : a.atiende.nombre}
+                            </span>
+                            {/* Desactivada: la cita sigue a su nombre hasta que alguien la reasigne. */}
+                            {!a.atiende.activo && reagendable && (
+                              <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                                inactivo · reasígnala
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </p>
                     </Td>
                     <Td className="tabular-nums">
                       <span className={atenuada ? "text-faint" : "text-fg"}>{formatFecha(a.fechaHora)}</span>
@@ -395,7 +468,29 @@ export default function Appointments() {
                       <Badge tone={estado.tone}>{estado.label}</Badge>
                     </Td>
                     <Td align="right">
-                      {moviendo ? (
+                      {cambiandoA ? (
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Select
+                            aria-label="Quién atiende"
+                            className="h-9 w-auto"
+                            value={cambiandoA.atiendeId}
+                            onChange={(e) => setReasignando({ id: a.id, atiendeId: e.target.value })}
+                            autoFocus
+                          >
+                            <OpcionesPersonas personas={personas} yo={yo} />
+                          </Select>
+                          <Button size="sm" variant="secondary" onClick={() => setReasignando(null)}>
+                            Cancelar
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={cambiandoA.atiendeId === (a.atiende?.id ?? "") || cambiando === a.id}
+                            onClick={() => reasignar(a.id, cambiandoA.atiendeId)}
+                          >
+                            Reasignar
+                          </Button>
+                        </div>
+                      ) : moviendo ? (
                         <div className="flex flex-wrap items-center justify-end gap-2">
                           <Input
                             aria-label="Nueva fecha y hora"
@@ -442,10 +537,25 @@ export default function Appointments() {
                               disabled={cambiando === a.id}
                               onClick={() => {
                                 setPorConfirmar(null);
+                                setReasignando(null);
                                 setReagendando({ id: a.id, fechaHora: formatDatetimeLocal(a.fechaHora) });
                               }}
                             >
                               Reagendar
+                            </Button>
+                          )}
+                          {reagendable && (
+                            <Button
+                              variant="link"
+                              disabled={cambiando === a.id}
+                              onClick={() => {
+                                setPorConfirmar(null);
+                                setReagendando(null);
+                                // Una persona inactiva no sale en el select: se arranca en "Sin asignar".
+                                setReasignando({ id: a.id, atiendeId: a.atiende?.activo ? a.atiende.id : "" });
+                              }}
+                            >
+                              Reasignar
                             </Button>
                           )}
                           {acciones.map((destino) => (
@@ -468,6 +578,20 @@ export default function Appointments() {
           </Table>
         )}
       </Card>
+    </>
+  );
+}
+
+// Opciones de "Atiende": Sin asignar + las personas activas del negocio (quien tiene la sesión, como "Tú").
+function OpcionesPersonas({ personas, yo }: { personas: Persona[]; yo: string | null }) {
+  return (
+    <>
+      <option value="">Sin asignar</option>
+      {personas.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.id === yo ? `${p.nombre} (tú)` : p.nombre}
+        </option>
+      ))}
     </>
   );
 }

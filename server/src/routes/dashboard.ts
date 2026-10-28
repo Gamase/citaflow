@@ -42,11 +42,11 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
     }),
     prisma.appointment.groupBy({ by: ["estado"], where: delMes, _count: { _all: true } }),
     // Los ingresos solo los ve el dueño: para el empleado ni se consultan.
-    // Limitación conocida: usa el precio actual del servicio, no el de cuando se atendió.
+    // Con el precio guardado en la cita (el de cuando se agendó).
     req.rol === "DUENO"
       ? prisma.appointment.findMany({
           where: { ...delMes, estado: "COMPLETADA" },
-          select: { service: { select: { precio: true } } },
+          select: { precio: true, service: { select: { precio: true } } },
         })
       : null,
     prisma.client.count({ where: { tenantId } }),
@@ -63,7 +63,9 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
   const resueltas = porEstado.COMPLETADA + porEstado.NO_ASISTIO;
   const tasaNoAsistencia = resueltas === 0 ? null : porEstado.NO_ASISTIO / resueltas;
 
-  const ingresos = completadas?.reduce((suma, c) => suma.plus(c.service.precio), new Prisma.Decimal(0));
+  // `?? service.precio`: solo mientras la columna sea opcional (citas creadas por el código
+  // viejo durante el build). La migración 2 la vuelve obligatoria y esto se quita.
+  const ingresos = completadas?.reduce((suma, c) => suma.plus(c.precio ?? c.service.precio), new Prisma.Decimal(0));
 
   res.json({
     hoy,
