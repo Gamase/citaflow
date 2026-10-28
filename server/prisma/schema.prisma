@@ -41,6 +41,9 @@ model User {
   rol       Rol
   // Nada se borra: un usuario desactivado pierde el acceso en su siguiente petición.
   activo    Boolean  @default(true)
+  // Cuándo se cambió la contraseña, redondeado al segundo (el `iat` del JWT va en segundos).
+  // verificarToken rechaza los tokens emitidos antes: cambiar la contraseña cierra las otras sesiones.
+  passwordCambiadaEn DateTime?
   creadoEn  DateTime @default(now())
 
   tenantId  String

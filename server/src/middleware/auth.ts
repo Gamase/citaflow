@@ -7,6 +7,22 @@ const prisma = new PrismaClient();
 interface JwtPayload {
   userId: string;
   tenantId: string;
+  iat: number; // segundos; lo agrega jwt.sign
+}
+
+// El segundo actual, como Date. passwordCambiadaEn se guarda así y el token nuevo se firma
+// con ese mismo segundo como `iat`: el token de la sesión que cambió la contraseña no queda
+// como "anterior al cambio".
+export function segundoActual(): Date {
+  return new Date(Math.floor(Date.now() / 1000) * 1000);
+}
+
+export function firmarToken(userId: string, tenantId: string, emitidoEn = segundoActual()): string {
+  return jwt.sign(
+    { userId, tenantId, iat: emitidoEn.getTime() / 1000 },
+    process.env.JWT_SECRET as string,
+    { expiresIn: "7d" },
+  );
 }
 
 declare global {
@@ -44,7 +60,7 @@ export async function verificarToken(req: Request, res: Response, next: NextFunc
   // El rol también se lee aquí y no del token: si cambia, cuenta desde la siguiente petición.
   const user = await prisma.user.findFirst({
     where: { id: payload.userId, tenantId: payload.tenantId },
-    select: { rol: true, activo: true },
+    select: { rol: true, activo: true, passwordCambiadaEn: true },
   });
 
   if (!user) {
@@ -53,6 +69,12 @@ export async function verificarToken(req: Request, res: Response, next: NextFunc
 
   if (!user.activo) {
     return res.status(401).json({ error: "Tu usuario está desactivado" });
+  }
+
+  // Token emitido antes del último cambio de contraseña: esa sesión ya no vale. Todo en
+  // segundos; un token del mismo segundo que el cambio sigue valiendo (es el nuevo).
+  if (user.passwordCambiadaEn && payload.iat < user.passwordCambiadaEn.getTime() / 1000) {
+    return res.status(401).json({ error: "Tu contraseña cambió. Vuelve a iniciar sesión." });
   }
 
   req.userId = payload.userId;

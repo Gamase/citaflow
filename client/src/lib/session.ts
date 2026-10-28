@@ -26,6 +26,12 @@ export function getSession(): Session | null {
   }
 }
 
+// Para el contexto del <Outlet> de DashboardLayout: una página (Ajustes) cambia el nombre
+// del usuario o del negocio y el sidebar se redibuja sin volver a entrar.
+export interface ContextoSesion {
+  actualizarSesion: (cambios: { user?: Partial<Session["user"]>; tenant?: Partial<Session["tenant"]> }) => void;
+}
+
 export function esDueno(): boolean {
   return getSession()?.user.rol === "DUENO";
 }

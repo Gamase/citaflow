@@ -508,6 +508,44 @@ t "y no puede iniciar sesión"      403 POST /auth/login "" "{\"email\":\"$NUEVO
 t "dueño lo reactiva"              200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":true}'
 t "el mismo token vuelve a servir" 200 GET /clients "$TN"
 
+echo "== Ajustes: mi cuenta"
+t "mis datos (GET /me)"            200 GET /me "$TA"
+cumple "  soy el dueño de A"         "r.email === '$A_EMAIL' && r.rol === 'DUENO' && !('password' in r)"
+MI_NOMBRE=$(campo "$RESP" nombre); MI_NEGOCIO=$(campo "$RESP" tenant.nombre)
+t "editar mi nombre"               200 PATCH /me "$TA" '{"nombre":"Nombre editado"}'
+cumple "  nombre nuevo"              "r.nombre === 'Nombre editado'"
+t "regresar mi nombre"             200 PATCH /me "$TA" "{\"nombre\":\"$MI_NOMBRE\"}"
+t "editar: body vacío"             400 PATCH /me "$TA" '{}'
+t "cambiar email sin contraseña"   400 PATCH /me "$TA" "{\"email\":\"otro.$RANDOM@ejemplo.test\"}"
+t "cambiar a un email repetido"    409 PATCH /me "$TA" "{\"email\":\"$E_EMAIL\",\"passwordActual\":\"$A_PASS\"}"
+# Intentos con contraseña incorrecta: con el empleado temporal, para que el límite
+# (por usuario) no se acumule en las cuentas del seed entre corridas.
+t "cambiar email, contraseña mal"  400 PATCH /me "$TN" "{\"email\":\"otro.$RANDOM@ejemplo.test\",\"passwordActual\":\"incorrecta\"}"
+t "cambiar contraseña, actual mal" 400 PATCH /me/password "$TN" '{"passwordActual":"incorrecta","passwordNueva":"cambiada-123"}'
+h "contraseña con rate limit"      sí RateLimit-Policy PATCH /me/password "" "Authorization: Bearer $TN" '{"passwordActual":"incorrecta","passwordNueva":"cambiada-123"}'
+t "nueva igual a la actual"        400 PATCH /me/password "$TN" '{"passwordActual":"12345678","passwordNueva":"12345678"}'
+t "nueva muy corta"                400 PATCH /me/password "$TN" '{"passwordActual":"12345678","passwordNueva":"1234567"}'
+# El token viejo tiene que ser de un segundo anterior al cambio (todo se compara en segundos).
+sleep 1
+t "cambiar mi contraseña"          200 PATCH /me/password "$TN" '{"passwordActual":"12345678","passwordNueva":"cambiada-123"}'
+TN2=$(campo "$RESP" token)
+t "el token NUEVO sirve de inmediato" 200 GET /clients "$TN2"
+t "el token anterior ya no sirve"  401 GET /clients "$TN"
+t "login con la contraseña nueva"  200 POST /auth/login "" "{\"email\":\"$NUEVO_EMAIL\",\"password\":\"cambiada-123\"}"
+t "regresarla a la original"       200 PATCH /me/password "$TN2" '{"passwordActual":"cambiada-123","passwordNueva":"12345678"}'
+TN=$(campo "$RESP" token)
+t "y sigue entrando"               200 GET /clients "$TN"
+
+echo "== Ajustes: negocio"
+t "empleado edita el negocio"      403 PATCH /tenant "$TE" '{"nombre":"Intento"}'
+t "negocio sin nombre"             400 PATCH /tenant "$TA" '{"nombre":"   "}'
+t "dueño edita el negocio"         200 PATCH /tenant "$TA" '{"nombre":"Negocio editado"}'
+cumple "  nombre nuevo"              "r.nombre === 'Negocio editado'"
+t "el negocio de B no cambia"      200 GET /me "$TB"
+cumple "  (aislamiento)"             "r.tenant.nombre !== 'Negocio editado'"
+t "regresar el nombre del negocio" 200 PATCH /tenant "$TA" "{\"nombre\":\"$MI_NEGOCIO\"}"
+cumple "  como estaba"               "r.nombre === '$MI_NEGOCIO'"
+
 if [ "${PROBAR_429:-}" = "1" ]; then
   echo "== Rate limit (PROBAR_429=1)"
   for i in $(seq 1 12); do

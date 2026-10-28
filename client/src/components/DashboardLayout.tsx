@@ -2,8 +2,8 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import logoDark from "../assets/citaflow-logo-dark.svg";
 import mark from "../assets/citaflow-mark.svg";
-import { clearSession, esDueno, getSession } from "../lib/session";
-import { BadgeIcon, CalendarIcon, ChartIcon, LogOutIcon, MenuIcon, TagIcon, UsersIcon, XIcon } from "./ui/Icons";
+import { clearSession, esDueno, getSession, saveSession, type ContextoSesion } from "../lib/session";
+import { BadgeIcon, CalendarIcon, ChartIcon, GearIcon, LogOutIcon, MenuIcon, TagIcon, UsersIcon, XIcon } from "./ui/Icons";
 
 // `end` en Resumen: si no, /dashboard quedaría activo también en /dashboard/clients, etc.
 const navItems = [
@@ -12,12 +12,23 @@ const navItems = [
   { to: "/dashboard/clients", label: "Clientes", icon: UsersIcon },
   { to: "/dashboard/appointments", label: "Citas", icon: CalendarIcon },
   { to: "/dashboard/team", label: "Equipo", icon: BadgeIcon, soloDueno: true },
+  { to: "/dashboard/settings", label: "Ajustes", icon: GearIcon },
 ];
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
   const [menuAbierto, setMenuAbierto] = useState(false);
-  const session = getSession();
+  // En estado (no solo en localStorage) para que un cambio desde Ajustes se vea aquí al momento.
+  const [session, setSession] = useState(getSession);
+
+  const contexto: ContextoSesion = {
+    actualizarSesion: (cambios) => {
+      if (!session) return;
+      const nueva = { user: { ...session.user, ...cambios.user }, tenant: { ...session.tenant, ...cambios.tenant } };
+      saveSession(nueva);
+      setSession(nueva);
+    },
+  };
   const negocio = session?.tenant.nombre ?? "Tu negocio";
 
   function logout() {
@@ -125,7 +136,7 @@ export default function DashboardLayout() {
 
       <main className="min-w-0 flex-1 lg:pl-64">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
-          <Outlet />
+          <Outlet context={contexto} />
         </div>
       </main>
     </div>

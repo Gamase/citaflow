@@ -1,7 +1,7 @@
 import { Request, Response, Router } from "express";
 import bcrypt from "bcryptjs";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { soloDueno, verificarToken } from "../middleware/auth";
+import { segundoActual, soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
   activoSchema,
@@ -128,7 +128,8 @@ router.patch("/:id/password", validar(passwordEmpleadoSchema), async (req, res) 
 
   await prisma.user.update({
     where: { id: user.id, tenantId: req.tenantId as string },
-    data: { password: await bcrypt.hash(password, 10) },
+    // También cierra las sesiones que el empleado tenga abiertas (ver verificarToken).
+    data: { password: await bcrypt.hash(password, 10), passwordCambiadaEn: segundoActual() },
   });
   res.status(204).end();
 });

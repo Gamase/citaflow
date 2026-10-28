@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { firmarToken } from "../middleware/auth";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { validar } from "../middleware/validar";
 import { limiteLogin, limiteRegistro } from "../middleware/limites";
@@ -43,11 +43,7 @@ router.post("/register", limiteRegistro, validar(registroSchema), async (req, re
     return res.status(500).json({ error: "No se pudo crear el usuario" });
   }
 
-  const token = jwt.sign(
-    { userId: user.id, tenantId: tenant.id },
-    process.env.JWT_SECRET as string,
-    { expiresIn: "7d" }
-  );
+  const token = firmarToken(user.id, tenant.id);
 
   res.status(201).json({
     token,
@@ -79,11 +75,7 @@ router.post("/login", limiteLogin, validar(loginSchema), async (req, res) => {
     return res.status(403).json({ error: "Tu usuario está desactivado. Habla con el dueño del negocio." });
   }
 
-  const token = jwt.sign(
-    { userId: user.id, tenantId: user.tenantId },
-    process.env.JWT_SECRET as string,
-    { expiresIn: "7d" }
-  );
+  const token = firmarToken(user.id, user.tenantId);
 
   res.json({
     token,

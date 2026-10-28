@@ -55,6 +55,36 @@ export const activoSchema = z.object({
   activo: z.boolean({ error: "activo debe ser true o false" }),
 });
 
+// --- Ajustes: mi cuenta y mi negocio ---
+
+const passwordActual = z
+  .string({ error: "Escribe tu contraseña actual" })
+  .min(1, "Escribe tu contraseña actual");
+
+// Cambiar el email pide la contraseña actual (el email es con lo que se entra).
+export const miCuentaSchema = z
+  .object({
+    nombre: texto("Tu nombre"),
+    email,
+    passwordActual,
+  })
+  .partial()
+  .refine((d) => d.nombre !== undefined || d.email !== undefined, "No hay cambios que guardar")
+  .refine((d) => d.email === undefined || d.passwordActual !== undefined, {
+    message: "Para cambiar tu email escribe tu contraseña actual",
+  });
+
+export const miPasswordSchema = z
+  .object({
+    passwordActual,
+    passwordNueva: registroSchema.shape.password,
+  })
+  .refine((d) => d.passwordNueva !== d.passwordActual, "La contraseña nueva debe ser distinta de la actual");
+
+export const negocioSchema = z.object({
+  nombre: texto("El nombre del negocio"),
+});
+
 // --- Services ---
 
 export const servicioSchema = z.object({
@@ -164,6 +194,9 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type EmpleadoInput = z.infer<typeof empleadoSchema>;
 export type EditarEmpleadoInput = z.infer<typeof editarEmpleadoSchema>;
 export type PasswordEmpleadoInput = z.infer<typeof passwordEmpleadoSchema>;
+export type MiCuentaInput = z.infer<typeof miCuentaSchema>;
+export type MiPasswordInput = z.infer<typeof miPasswordSchema>;
+export type NegocioInput = z.infer<typeof negocioSchema>;
 export type ActivoInput = z.infer<typeof activoSchema>;
 export type ServicioInput = z.infer<typeof servicioSchema>;
 export type EditarServicioInput = z.infer<typeof editarServicioSchema>;
