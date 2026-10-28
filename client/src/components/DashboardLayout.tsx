@@ -12,8 +12,15 @@ const navItems = [
   { to: "/dashboard/clients", label: "Clientes", icon: UsersIcon },
   { to: "/dashboard/appointments", label: "Citas", icon: CalendarIcon },
   { to: "/dashboard/team", label: "Equipo", icon: BadgeIcon, soloDueno: true },
-  { to: "/dashboard/settings", label: "Ajustes", icon: GearIcon },
 ];
+
+// Estilo de un link del sidebar activo o no. Lo comparten el menú y la tarjeta del negocio
+// (que lleva a Ajustes). La barra de acento a la izquierda va en el `before:`.
+function claseLink(isActive: boolean) {
+  return isActive
+    ? "bg-teal-500/15 text-teal-300 before:absolute before:inset-y-2 before:-left-3 before:w-1 before:rounded-r-full before:bg-teal-500"
+    : "text-ink-300 hover:bg-white/10 hover:text-white";
+}
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
@@ -37,12 +44,13 @@ export default function DashboardLayout() {
   }
 
   const sidebar = (
-    <div className="flex h-full flex-col bg-ink-900 text-white">
-      <div className="flex h-16 items-center px-5">
-        <img src={logoDark} alt="CitaFlow" className="h-8 w-auto" />
+    // overflow-y-auto: en un celular acostado el menú no cabe a lo alto y se corta sin scroll.
+    <div className="flex h-full flex-col overflow-y-auto bg-ink-900 text-white">
+      <div className="flex h-20 items-center px-5">
+        <img src={logoDark} alt="CitaFlow" className="h-10 w-auto" />
       </div>
 
-      <nav aria-label="Principal" className="flex-1 space-y-0.5 px-3 py-4">
+      <nav aria-label="Principal" className="flex-1 space-y-1.5 px-3 py-4">
         {navItems.filter((item) => !item.soloDueno || esDueno()).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -50,14 +58,10 @@ export default function DashboardLayout() {
             end={end}
             onClick={() => setMenuAbierto(false)}
             className={({ isActive }) =>
-              `relative flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-white/10 text-white before:absolute before:inset-y-1.5 before:-left-3 before:w-1 before:rounded-r-full before:bg-teal-500"
-                  : "text-ink-300 hover:bg-white/5 hover:text-white"
-              }`
+              `relative flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium transition-colors ${claseLink(isActive)}`
             }
           >
-            <Icon className="size-4 shrink-0" />
+            <Icon className="size-5 shrink-0" />
             {label}
           </NavLink>
         ))}
@@ -67,30 +71,48 @@ export default function DashboardLayout() {
         <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-ink-300 uppercase">
           Negocio conectado
         </p>
-        <div className="flex items-center gap-3 rounded-md bg-white/5 p-2.5">
-          <span
-            aria-hidden="true"
-            className="flex size-9 shrink-0 items-center justify-center rounded-md bg-teal-500 text-sm font-semibold text-ink-900"
-          >
-            {negocio.trim().charAt(0).toUpperCase()}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white" title={negocio}>
-              {negocio}
-            </p>
-            {session && (
-              <p className="truncate text-xs text-ink-300" title={session.user.email}>
-                {session.user.nombre} · {session.user.rol === "DUENO" ? "Dueño" : "Empleado"}
-              </p>
-            )}
-          </div>
-        </div>
+        {/* Toda la tarjeta lleva a Ajustes (tu cuenta y, si eres dueño, el negocio). */}
+        <NavLink
+          to="/dashboard/settings"
+          aria-label="Ajustes de la cuenta"
+          title="Ajustes de la cuenta"
+          onClick={() => setMenuAbierto(false)}
+          className={({ isActive }) =>
+            `group relative flex items-center gap-3 rounded-lg p-2.5 transition-colors ${
+              isActive ? claseLink(true) : "bg-white/5 hover:bg-white/10"
+            }`
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <span
+                aria-hidden="true"
+                className="flex size-9 shrink-0 items-center justify-center rounded-md bg-teal-500 text-sm font-semibold text-ink-900"
+              >
+                {negocio.trim().charAt(0).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-white">{negocio}</p>
+                {session && (
+                  <p className="truncate text-xs text-ink-300">
+                    {session.user.nombre} · {session.user.rol === "DUENO" ? "Dueño" : "Empleado"}
+                  </p>
+                )}
+              </div>
+              <GearIcon
+                className={`size-5 shrink-0 transition-colors ${
+                  isActive ? "text-teal-300" : "text-ink-300 group-hover:text-white"
+                }`}
+              />
+            </>
+          )}
+        </NavLink>
         <button
           type="button"
           onClick={logout}
-          className="mt-1 flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-ink-300 transition-colors hover:bg-white/5 hover:text-white"
+          className="mt-1.5 flex h-11 w-full items-center gap-3 rounded-lg px-3 text-[15px] text-ink-300 transition-colors hover:bg-white/10 hover:text-white"
         >
-          <LogOutIcon className="size-4" />
+          <LogOutIcon className="size-5" />
           Cerrar sesión
         </button>
       </div>

@@ -22,6 +22,7 @@
   --color-teal-700: #0B7A6E; /* botón primario (texto blanco 5.2:1) */
   --color-teal-800: #096459;
   --color-teal-50: #E7F6F3;
+  --color-teal-300: #7DDCCF; /* teal claro sobre fondo ink: ítem activo del sidebar */
 
   --color-amber-500: #F5A524; /* amber de marca */
   --color-amber-800: #8A5A00;
