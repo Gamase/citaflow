@@ -6,8 +6,9 @@
 #
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
 # así que la BD tiene que tener ese seed, de hoy o de ayer (el resumen del dashboard se
-# compara contra las citas que sembró, que van de -14 a +7 días). Deja los datos como estaban, salvo dos citas
-# CANCELADAS ~40 días adelante (nada se borra en CitaFlow).
+# compara contra las citas que sembró, que van de -14 a +7 días). Deja los datos como estaban, salvo tres citas
+# CANCELADAS ~40 días adelante y dos empleados de prueba activos en el negocio A (nada se
+# borra en CitaFlow; el siguiente seed los limpia).
 #
 # Variables opcionales:
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
@@ -35,10 +36,12 @@ CUENTAS=$(npx --no-install tsx -e "
   const d = DATASETS['$LABEL'];
   if (!d || d.tenants.length < 2) process.exit(1);
   for (const t of d.tenants.slice(0, 2)) console.log(t.email, t.password);
+  console.log(d.tenants[0]!.empleado.email, d.tenants[0]!.empleado.password);
 " 2>/dev/null) || { echo "Entorno \"$LABEL\" no existe en prisma/seed-data.ts" >&2; exit 1; }
 
 read -r A_EMAIL A_PASS <<< "$(sed -n 1p <<< "$CUENTAS")"
 read -r B_EMAIL B_PASS <<< "$(sed -n 2p <<< "$CUENTAS")"
+read -r E_EMAIL E_PASS <<< "$(sed -n 3p <<< "$CUENTAS")"
 
 RESP=$(mktemp)
 trap 'rm -f "$RESP"' EXIT
@@ -384,6 +387,91 @@ t "PATCH estado de cita ajena"     404 PATCH "/appointments/$CITA/estado" "$TB" 
 t "PATCH Cancelar"                 200 PATCH "/appointments/$CITA/estado" "$TA" '{"estado":"CANCELADA"}'
 t "reagendar cita cancelada"       409 PATCH "/appointments/$CITA" "$TA" "{\"fechaHora\":\"$FUT2\"}"
 t "cancelar la segunda cita"       200 PATCH "/appointments/$CITA2/estado" "$TA" '{"estado":"CANCELADA"}'
+
+echo "== Roles: empleado"
+t "login empleado"                 200 POST /auth/login "" "{\"email\":\"$E_EMAIL\",\"password\":\"$E_PASS\"}"
+cumple "  login devuelve rol EMPLEADO" "r.user.rol === 'EMPLEADO'"
+TE=$(campo "$RESP" token)
+t "login dueño"                    200 POST /auth/login "" "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}"
+cumple "  login devuelve rol DUENO"  "r.user.rol === 'DUENO'"
+FUT3=$(node -p "new Date(new Date('$FUT').getTime() + 4*3600e3).toISOString()")
+t "empleado: crear cita"           201 POST /appointments "$TE" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT3\"}"
+CITA3=$(campo "$RESP" id)
+t "empleado: reagendar su cita"    200 PATCH "/appointments/$CITA3" "$TE" "{\"fechaHora\":\"$FUT3\"}"
+t "empleado: cancelar la cita"     200 PATCH "/appointments/$CITA3/estado" "$TE" '{"estado":"CANCELADA"}'
+t "empleado: ver servicios"        200 GET /services "$TE"
+t "empleado: crear servicio"       403 POST /services "$TE" '{"nombre":"No debería","duracionMin":30,"precio":100}'
+t "empleado: editar servicio"      403 PATCH "/services/$SRV_A" "$TE" '{"precio":1}'
+t "empleado: borrar servicio"      403 DELETE "/services/$SRV_A" "$TE"
+t "empleado: crear cliente"        201 POST /clients "$TE" "{\"nombre\":\"Prueba de empleado\",\"telefono\":\"$TEL\"}"
+CLI_E=$(campo "$RESP" id)
+t "empleado: editar cliente"       200 PATCH "/clients/$CLI_E" "$TE" '{"nombre":"Prueba de empleado (editado)"}'
+t "empleado: borrar cliente"       403 DELETE "/clients/$CLI_E" "$TE"
+t "dueño borra ese cliente"        204 DELETE "/clients/$CLI_E" "$TA"
+t "empleado: ver equipo"           403 GET /users "$TE"
+t "empleado: crear empleado"       403 POST /users "$TE" '{"nombre":"X","email":"x@ejemplo.test","password":"12345678"}'
+t "empleado: resumen"              200 GET "/dashboard/resumen?$Q_OK" "$TE"
+cumple "  sin ingresos (null)"       "r.mes.ingresos === null && r.mes.total > 0"
+t "dueño: resumen"                 200 GET "/dashboard/resumen?$Q_OK" "$TA"
+cumple "  con ingresos"              "typeof r.mes.ingresos === 'number'"
+
+echo "== Roles: equipo (dueño)"
+# id del usuario con ese email en la lista del equipo de ese token.
+id_usuario() { curl -s -m 90 "$API/users" -H "Authorization: Bearer $1" | node -e '
+  let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => console.log(JSON.parse(s).find((u) => u.email === process.argv[1])?.id ?? ""));' "$2"; }
+YO_A=$(id_usuario "$TA" "$A_EMAIL")
+EMP_A=$(id_usuario "$TA" "$E_EMAIL")
+EMP_B=$(curl -s -m 90 "$API/users" -H "Authorization: Bearer $TB" | campo - "1.id")
+t "listar equipo"                  200 GET /users "$TA"
+cumple "  solo los de A, sin password" "r.length >= 2 && r.every((u) => !('password' in u)) && r.some((u) => u.email === '$A_EMAIL' && u.rol === 'DUENO')"
+NUEVO_EMAIL="prueba.$RANDOM$RANDOM@ejemplo.test"
+t "crear empleado"                 201 POST /users "$TA" "{\"nombre\":\"Empleado de prueba\",\"email\":\"$NUEVO_EMAIL\",\"password\":\"12345678\"}"
+cumple "  queda EMPLEADO y activo"   "r.rol === 'EMPLEADO' && r.activo === true && !('password' in r)"
+NUEVO=$(campo "$RESP" id)
+t "crear empleado: email repetido" 409 POST /users "$TA" "{\"nombre\":\"X\",\"email\":\"$E_EMAIL\",\"password\":\"12345678\"}"
+t "crear empleado: email de B"     409 POST /users "$TA" "{\"nombre\":\"X\",\"email\":\"$B_EMAIL\",\"password\":\"12345678\"}"
+t "crear empleado: password corta" 400 POST /users "$TA" '{"nombre":"X","email":"corta@ejemplo.test","password":"1234567"}'
+t "crear empleado con rol DUENO"   201 POST /users "$TA" "{\"nombre\":\"Intento\",\"email\":\"rol.$RANDOM$RANDOM@ejemplo.test\",\"password\":\"12345678\",\"rol\":\"DUENO\"}"
+cumple "  el rol del body se ignora" "r.rol === 'EMPLEADO'"
+t "desactivarse a sí mismo"        409 PATCH "/users/$YO_A/activo" "$TA" '{"activo":false}'
+t "activo no booleano"             400 PATCH "/users/$EMP_A/activo" "$TA" '{"activo":"no"}'
+t "ver usuario de otro negocio"    404 GET "/users/$EMP_B" "$TA"
+t "desactivar usuario de B"        404 PATCH "/users/$EMP_B/activo" "$TA" '{"activo":false}'
+t "ver usuario inexistente"        404 GET "/users/$UUID0" "$TA"
+
+echo "== Roles: editar empleados"
+# Sobre el empleado recién creado ($NUEVO): el del seed no se toca.
+NUEVO_EMAIL2="editado.$RANDOM$RANDOM@ejemplo.test"
+t "editar empleado"                200 PATCH "/users/$NUEVO" "$TA" "{\"nombre\":\"Empleado editado\",\"email\":\"$NUEVO_EMAIL2\"}"
+cumple "  nombre y email nuevos"     "r.nombre === 'Empleado editado' && r.email === '$NUEVO_EMAIL2' && r.rol === 'EMPLEADO'"
+NUEVO_EMAIL=$NUEVO_EMAIL2
+t "editar: email repetido"         409 PATCH "/users/$NUEVO" "$TA" "{\"email\":\"$E_EMAIL\"}"
+t "editar: email del dueño de B"   409 PATCH "/users/$NUEVO" "$TA" "{\"email\":\"$B_EMAIL\"}"
+t "editar: body vacío"             400 PATCH "/users/$NUEVO" "$TA" '{}'
+t "editar: email inválido"         400 PATCH "/users/$NUEVO" "$TA" '{"email":"mal"}'
+t "editar usuario de otro negocio" 404 PATCH "/users/$EMP_B" "$TA" '{"nombre":"Intruso"}'
+t "editarse a sí mismo"            409 PATCH "/users/$YO_A" "$TA" '{"nombre":"Yo"}'
+t "empleado intenta editar"        403 PATCH "/users/$NUEVO" "$TE" '{"nombre":"Intruso"}'
+t "password: muy corta"            400 PATCH "/users/$NUEVO/password" "$TA" '{"password":"1234567"}'
+t "password: la propia"            409 PATCH "/users/$YO_A/password" "$TA" '{"password":"otraclave123"}'
+t "password: usuario de B"         404 PATCH "/users/$EMP_B/password" "$TA" '{"password":"otraclave123"}'
+t "password: la cambia un empleado" 403 PATCH "/users/$NUEVO/password" "$TE" '{"password":"otraclave123"}'
+t "restablecer contraseña"         204 PATCH "/users/$NUEVO/password" "$TA" '{"password":"temporal-nueva-1"}'
+t "login con la anterior"          401 POST /auth/login "" "{\"email\":\"$NUEVO_EMAIL\",\"password\":\"12345678\"}"
+t "login con la nueva"             200 POST /auth/login "" "{\"email\":\"$NUEVO_EMAIL\",\"password\":\"temporal-nueva-1\"}"
+t "regresar la contraseña"         204 PATCH "/users/$NUEVO/password" "$TA" '{"password":"12345678"}'
+
+echo "== Roles: desactivar y reactivar"
+# Con el empleado recién creado, no con el del seed: si el script se corta a la mitad,
+# el seed queda intacto.
+TN=$(login "$NUEVO_EMAIL" 12345678)
+t "empleado nuevo entra"           200 GET /clients "$TN"
+t "dueño lo desactiva"             200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":false}'
+cumple "  queda inactivo"            "r.activo === false"
+t "su token vigente ya no sirve"   401 GET /clients "$TN"
+t "y no puede iniciar sesión"      403 POST /auth/login "" "{\"email\":\"$NUEVO_EMAIL\",\"password\":\"12345678\"}"
+t "dueño lo reactiva"              200 PATCH "/users/$NUEVO/activo" "$TA" '{"activo":true}'
+t "el mismo token vuelve a servir" 200 GET /clients "$TN"
 
 if [ "${PROBAR_429:-}" = "1" ]; then
   echo "== Rate limit (PROBAR_429=1)"

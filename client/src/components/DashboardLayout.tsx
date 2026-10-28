@@ -2,8 +2,8 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import logoDark from "../assets/citaflow-logo-dark.svg";
 import mark from "../assets/citaflow-mark.svg";
-import { clearSession, getSession } from "../lib/session";
-import { CalendarIcon, ChartIcon, LogOutIcon, MenuIcon, TagIcon, UsersIcon, XIcon } from "./ui/Icons";
+import { clearSession, esDueno, getSession } from "../lib/session";
+import { BadgeIcon, CalendarIcon, ChartIcon, LogOutIcon, MenuIcon, TagIcon, UsersIcon, XIcon } from "./ui/Icons";
 
 // `end` en Resumen: si no, /dashboard quedaría activo también en /dashboard/clients, etc.
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { to: "/dashboard/services", label: "Servicios", icon: TagIcon },
   { to: "/dashboard/clients", label: "Clientes", icon: UsersIcon },
   { to: "/dashboard/appointments", label: "Citas", icon: CalendarIcon },
+  { to: "/dashboard/equipo", label: "Equipo", icon: BadgeIcon, soloDueno: true },
 ];
 
 export default function DashboardLayout() {
@@ -31,7 +32,7 @@ export default function DashboardLayout() {
       </div>
 
       <nav aria-label="Principal" className="flex-1 space-y-0.5 px-3 py-4">
-        {navItems.map(({ to, label, icon: Icon, end }) => (
+        {navItems.filter((item) => !item.soloDueno || esDueno()).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -68,7 +69,7 @@ export default function DashboardLayout() {
             </p>
             {session && (
               <p className="truncate text-xs text-ink-300" title={session.user.email}>
-                {session.user.nombre} · {session.user.email}
+                {session.user.nombre} · {session.user.rol === "DUENO" ? "Dueño" : "Empleado"}
               </p>
             )}
           </div>

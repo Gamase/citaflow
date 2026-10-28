@@ -26,11 +26,21 @@ model Tenant {
   appointments Appointment[]
 }
 
+// Sin default a propósito: quien crea un usuario dice qué rol tiene
+// (register → DUENO, /users → EMPLEADO). La migración dejó a los existentes como DUENO.
+enum Rol {
+  DUENO
+  EMPLEADO
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
   nombre    String
+  rol       Rol
+  // Nada se borra: un usuario desactivado pierde el acceso en su siguiente petición.
+  activo    Boolean  @default(true)
   creadoEn  DateTime @default(now())
 
   tenantId  String

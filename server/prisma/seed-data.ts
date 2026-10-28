@@ -32,6 +32,8 @@ export interface Negocio {
   email: string;
   password: string;
   nombreUsuario: string;
+  // Segundo usuario del negocio, con rol EMPLEADO (el primero es el dueño).
+  empleado: { nombre: string; email: string; password: string };
   servicios: Servicio[];
   clientes: Cliente[];
   citas: CitaSemilla[];
@@ -132,6 +134,7 @@ export const DATASETS: Record<string, Dataset> = {
         email: "admin@tornillo.dev",
         password: "12345678",
         nombreUsuario: "Dev Tester",
+        empleado: { nombre: "Luis Ochoa Peña", email: "empleado@tornillo.dev", password: "12345678" },
         servicios: [
           { nombre: "Diagnóstico", duracionMin: 30, precio: 250 },
           { nombre: "Cambio de aceite", duracionMin: 30, precio: 450 },
@@ -158,6 +161,7 @@ export const DATASETS: Record<string, Dataset> = {
         email: "admin@drprueba.dev",
         password: "12345678",
         nombreUsuario: "Dev Tester 2",
+        empleado: { nombre: "Rocío Valdez Lara", email: "empleado@drprueba.dev", password: "12345678" },
         servicios: [
           { nombre: "Consulta general", duracionMin: 30, precio: 400 },
           { nombre: "Diagnóstico", duracionMin: 45, precio: 600 },
@@ -188,6 +192,7 @@ export const DATASETS: Record<string, Dataset> = {
         email: "admin@bellavista.test",
         password: "12345678",
         nombreUsuario: "Staging Tester",
+        empleado: { nombre: "Karla Mendoza Ríos", email: "empleado@bellavista.test", password: "12345678" },
         servicios: [
           { nombre: "Corte de dama", duracionMin: 45, precio: 280 },
           { nombre: "Tinte completo", duracionMin: 120, precio: 950 },
@@ -214,6 +219,7 @@ export const DATASETS: Record<string, Dataset> = {
         email: "admin@motorpro.test",
         password: "12345678",
         nombreUsuario: "Staging Tester 2",
+        empleado: { nombre: "Hugo Castañeda Vela", email: "empleado@motorpro.test", password: "12345678" },
         servicios: [
           { nombre: "Diagnóstico", duracionMin: 40, precio: 350 },
           { nombre: "Cambio de aceite", duracionMin: 30, precio: 480 },
@@ -244,6 +250,7 @@ export const DATASETS: Record<string, Dataset> = {
         email: "admin@barberia.com",
         password: "12345678",
         nombreUsuario: "Juan Pérez",
+        empleado: { nombre: "Pedro Gómez Ruiz", email: "empleado@barberia.com", password: "12345678" },
         servicios: [
           { nombre: "Corte de cabello", duracionMin: 30, precio: 150 },
           { nombre: "Arreglo de barba", duracionMin: 20, precio: 100 },
@@ -261,6 +268,7 @@ export const DATASETS: Record<string, Dataset> = {
         email: "admin@sparelax.com",
         password: "12345678",
         nombreUsuario: "María López",
+        empleado: { nombre: "Laura Díaz Mora", email: "empleado@sparelax.com", password: "12345678" },
         servicios: [
           { nombre: "Masaje relajante", duracionMin: 60, precio: 500 },
           { nombre: "Facial hidratante", duracionMin: 45, precio: 400 },

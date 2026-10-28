@@ -28,6 +28,11 @@ async function main() {
 
   // Antes de borrar nada: si los datos rompen alguna regla de la API, no se toca la BD.
   const errores = dataset.tenants.flatMap((t) => validarNegocio(t, ahora));
+  // El email es único en toda la BD (con él se hace login), no solo dentro de cada negocio.
+  const emails = dataset.tenants.flatMap((t) => [t.email, t.empleado.email]);
+  for (const repetido of new Set(emails.filter((e, i) => emails.indexOf(e) !== i))) {
+    errores.push(`El email ${repetido} se repite (los emails son únicos en todo CitaFlow)`);
+  }
   if (errores.length > 0) {
     throw new Error(`Los datos del seed "${label}" no cumplen las reglas:\n  - ${errores.join("\n  - ")}`);
   }
@@ -43,17 +48,24 @@ async function main() {
   const creados: { datos: Negocio; tenant: { id: string } }[] = [];
   for (const t of dataset.tenants) {
     console.log(`Sembrando ${t.nombre}...`);
-    const hashedPassword = await bcrypt.hash(t.password, 10);
-
     const tenant = await prisma.tenant.create({
       data: {
         nombre: t.nombre,
         users: {
-          create: {
-            email: t.email,
-            password: hashedPassword,
-            nombre: t.nombreUsuario,
-          },
+          create: [
+            {
+              email: t.email,
+              password: await bcrypt.hash(t.password, 10),
+              nombre: t.nombreUsuario,
+              rol: "DUENO",
+            },
+            {
+              email: t.empleado.email,
+              password: await bcrypt.hash(t.empleado.password, 10),
+              nombre: t.empleado.nombre,
+              rol: "EMPLEADO",
+            },
+          ],
         },
       },
     });
@@ -83,7 +95,8 @@ async function main() {
 
   console.log(`Listo. Dataset "${label}" sembrado:`);
   for (const t of dataset.tenants) {
-    console.log(`  - ${t.nombre}: ${t.email} / ${t.password}`);
+    console.log(`  - ${t.nombre}: ${t.email} / ${t.password} (dueño)`);
+    console.log(`    ${" ".repeat(t.nombre.length)}  ${t.empleado.email} / ${t.empleado.password} (empleado: ${t.empleado.nombre})`);
   }
 
   await imprimirDatosDeDemo(creados, ahora);
@@ -98,6 +111,12 @@ async function imprimirDatosDeDemo(
   if (!a || !b) return;
 
   console.log("\nPara la demo:");
+
+  // Roles: el empleado de A agenda y atiende, pero no ve ingresos ni administra servicios ni equipo.
+  console.log(
+    `  - Empleado de ${a.datos.nombre}: ${a.datos.empleado.email} / ${a.datos.empleado.password} ` +
+      `(${a.datos.empleado.nombre}). Sin ingresos en el Resumen, Servicios solo lectura, sin Equipo.`,
+  );
 
   // Cita de B para el curl de acceso cruzado (con el token de A → 404).
   const citaB = await prisma.appointment.findFirst({

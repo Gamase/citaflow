@@ -1,9 +1,12 @@
-// Datos de presentación de la sesión (nombre del negocio y del usuario).
-// El token sigue viviendo en su propia llave; esto solo alimenta el sidebar.
+// Datos de presentación de la sesión (nombre del negocio, del usuario y su rol).
+// El token sigue viviendo en su propia llave; esto solo alimenta la UI. El rol aquí
+// solo decide qué botones se muestran: quien de verdad lo hace cumplir es el backend.
+
+export type Rol = "DUENO" | "EMPLEADO";
 
 export interface Session {
   tenant: { id: string; nombre: string };
-  user: { nombre: string; email: string };
+  user: { nombre: string; email: string; rol: Rol };
 }
 
 const KEY = "session";
@@ -21,6 +24,10 @@ export function getSession(): Session | null {
   } catch {
     return null;
   }
+}
+
+export function esDueno(): boolean {
+  return getSession()?.user.rol === "DUENO";
 }
 
 export function clearSession() {

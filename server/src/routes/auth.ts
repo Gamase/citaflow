@@ -24,6 +24,7 @@ router.post("/register", limiteRegistro, validar(registroSchema), async (req, re
             email,
             password: hashedPassword,
             nombre: nombreUsuario,
+            rol: "DUENO",
           },
         },
       },
@@ -51,7 +52,7 @@ router.post("/register", limiteRegistro, validar(registroSchema), async (req, re
   res.status(201).json({
     token,
     tenant: { id: tenant.id, nombre: tenant.nombre },
-    user: { nombre: user.nombre, email: user.email },
+    user: { nombre: user.nombre, email: user.email, rol: user.rol },
   });
 });
 
@@ -73,6 +74,11 @@ router.post("/login", limiteLogin, validar(loginSchema), async (req, res) => {
     return res.status(401).json({ error: "Credenciales inválidas" });
   }
 
+  // Después de revisar la contraseña: así no se puede averiguar qué correos existen.
+  if (!user.activo) {
+    return res.status(403).json({ error: "Tu usuario está desactivado. Habla con el dueño del negocio." });
+  }
+
   const token = jwt.sign(
     { userId: user.id, tenantId: user.tenantId },
     process.env.JWT_SECRET as string,
@@ -82,7 +88,7 @@ router.post("/login", limiteLogin, validar(loginSchema), async (req, res) => {
   res.json({
     token,
     tenant: user.tenant,
-    user: { nombre: user.nombre, email: user.email },
+    user: { nombre: user.nombre, email: user.email, rol: user.rol },
   });
 });
 

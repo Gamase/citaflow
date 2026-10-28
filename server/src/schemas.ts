@@ -31,6 +31,27 @@ export const loginSchema = z.object({
   password: z.string({ error: "La contraseña es obligatoria" }).min(1, "La contraseña es obligatoria"),
 });
 
+// --- Usuarios (equipo del negocio) ---
+
+// El dueño da de alta al empleado con una contraseña temporal (mismas reglas que al registrarse).
+export const empleadoSchema = z.object({
+  nombre: texto("El nombre"),
+  email,
+  password: registroSchema.shape.password,
+});
+
+export const editarEmpleadoSchema = empleadoSchema
+  .pick({ nombre: true, email: true })
+  .partial()
+  .refine((datos) => Object.keys(datos).length > 0, "No hay cambios que guardar");
+
+// Contraseña temporal nueva que el dueño le asigna al empleado.
+export const passwordEmpleadoSchema = empleadoSchema.pick({ password: true });
+
+export const activoSchema = z.object({
+  activo: z.boolean({ error: "activo debe ser true o false" }),
+});
+
 // --- Services ---
 
 export const servicioSchema = z.object({
@@ -137,6 +158,10 @@ export const filtroCitasSchema = z
 
 export type RegistroInput = z.infer<typeof registroSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type EmpleadoInput = z.infer<typeof empleadoSchema>;
+export type EditarEmpleadoInput = z.infer<typeof editarEmpleadoSchema>;
+export type PasswordEmpleadoInput = z.infer<typeof passwordEmpleadoSchema>;
+export type ActivoInput = z.infer<typeof activoSchema>;
 export type ServicioInput = z.infer<typeof servicioSchema>;
 export type EditarServicioInput = z.infer<typeof editarServicioSchema>;
 export type ClienteInput = z.infer<typeof clienteSchema>;

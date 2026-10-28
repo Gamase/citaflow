@@ -9,6 +9,7 @@ import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
 import { formatTelefono } from "../lib/format";
+import { esDueno } from "../lib/session";
 
 interface Client {
   id: string;
@@ -127,6 +128,9 @@ export default function Clients() {
       toast.error(apiError(err, "No se pudo guardar el cambio."));
     }
   }
+
+  // El empleado ve, agrega y edita clientes; borrarlos es solo del dueño.
+  const dueno = esDueno();
 
   const botonNuevo = (
     <Button onClick={() => setMostrarForm(true)}>
@@ -291,9 +295,11 @@ export default function Clients() {
                         <Button variant="link" onClick={() => startEdit(c)}>
                           Editar
                         </Button>
-                        <Button variant="link-danger" onClick={() => handleDelete(c.id)}>
-                          Eliminar
-                        </Button>
+                        {dueno && (
+                          <Button variant="link-danger" onClick={() => handleDelete(c.id)}>
+                            Eliminar
+                          </Button>
+                        )}
                       </div>
                     </Td>
                   </Tr>

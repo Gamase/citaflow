@@ -41,11 +41,14 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
       take: 5,
     }),
     prisma.appointment.groupBy({ by: ["estado"], where: delMes, _count: { _all: true } }),
+    // Los ingresos solo los ve el dueño: para el empleado ni se consultan.
     // Limitación conocida: usa el precio actual del servicio, no el de cuando se atendió.
-    prisma.appointment.findMany({
-      where: { ...delMes, estado: "COMPLETADA" },
-      select: { service: { select: { precio: true } } },
-    }),
+    req.rol === "DUENO"
+      ? prisma.appointment.findMany({
+          where: { ...delMes, estado: "COMPLETADA" },
+          select: { service: { select: { precio: true } } },
+        })
+      : null,
     prisma.client.count({ where: { tenantId } }),
     prisma.service.count({ where: { tenantId } }),
   ]);
@@ -60,7 +63,7 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
   const resueltas = porEstado.COMPLETADA + porEstado.NO_ASISTIO;
   const tasaNoAsistencia = resueltas === 0 ? null : porEstado.NO_ASISTIO / resueltas;
 
-  const ingresos = completadas.reduce((suma, c) => suma.plus(c.service.precio), new Prisma.Decimal(0));
+  const ingresos = completadas?.reduce((suma, c) => suma.plus(c.service.precio), new Prisma.Decimal(0));
 
   res.json({
     hoy,
@@ -69,7 +72,8 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
       porEstado,
       total: Object.values(porEstado).reduce((a, b) => a + b, 0),
       tasaNoAsistencia,
-      ingresos: ingresos.toNumber(),
+      // null para el empleado: no basta con ocultarlo en el front.
+      ingresos: ingresos ? ingresos.toNumber() : null,
     },
     totales: { clientes, servicios },
   });

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { verificarToken } from "../middleware/auth";
+import { soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
   busquedaClientesSchema,
@@ -80,7 +80,8 @@ router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+// Borrar un cliente es solo del dueño; el empleado puede verlos, crearlos y editarlos.
+router.delete("/:id", soloDueno, async (req, res) => {
   const client = await prisma.client.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });

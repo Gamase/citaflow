@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { verificarToken } from "../middleware/auth";
+import { soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import { editarServicioSchema, servicioSchema, EditarServicioInput, ServicioInput } from "../schemas";
 
@@ -9,6 +9,8 @@ const prisma = new PrismaClient();
 
 router.use(verificarToken);
 
+// Ver servicios: todos (el empleado los necesita para agendar). Crear, editar y borrar: solo el dueño.
+
 router.get("/", async (req, res) => {
   const services = await prisma.service.findMany({
     where: { tenantId: req.tenantId as string },
@@ -16,7 +18,7 @@ router.get("/", async (req, res) => {
   res.json(services);
 });
 
-router.post("/", validar(servicioSchema), async (req, res) => {
+router.post("/", soloDueno, validar(servicioSchema), async (req, res) => {
   const { nombre, duracionMin, precio } = req.body as ServicioInput;
 
   const existente = await prisma.service.findFirst({
@@ -44,7 +46,7 @@ router.post("/", validar(servicioSchema), async (req, res) => {
 });
 
 // Campos opcionales: solo se valida y actualiza lo que venga.
-router.patch("/:id", validar(editarServicioSchema), async (req, res) => {
+router.patch("/:id", soloDueno, validar(editarServicioSchema), async (req, res) => {
   const { nombre, duracionMin, precio } = req.body as EditarServicioInput;
 
   const service = await prisma.service.findFirst({
@@ -83,7 +85,7 @@ router.patch("/:id", validar(editarServicioSchema), async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", soloDueno, async (req, res) => {
   const service = await prisma.service.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
   });

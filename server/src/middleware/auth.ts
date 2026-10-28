@@ -1,6 +1,6 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Rol } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -14,6 +14,7 @@ declare global {
     interface Request {
       userId?: string;
       tenantId?: string;
+      rol?: Rol;
     }
   }
 }
@@ -39,17 +40,32 @@ export async function verificarToken(req: Request, res: Response, next: NextFunc
   }
 
   // La firma solo prueba que el token lo emitimos nosotros, no que el usuario y su
-  // negocio sigan existiendo (por ejemplo, después de re-sembrar la BD).
+  // negocio sigan existiendo (por ejemplo, después de re-sembrar la BD) ni que siga activo.
+  // El rol también se lee aquí y no del token: si cambia, cuenta desde la siguiente petición.
   const user = await prisma.user.findFirst({
     where: { id: payload.userId, tenantId: payload.tenantId },
-    select: { id: true },
+    select: { rol: true, activo: true },
   });
 
   if (!user) {
     return res.status(401).json({ error: "Token inválido o expirado" });
   }
 
+  if (!user.activo) {
+    return res.status(401).json({ error: "Tu usuario está desactivado" });
+  }
+
   req.userId = payload.userId;
   req.tenantId = payload.tenantId;
+  req.rol = user.rol;
   next();
 }
+
+// Va después de verificarToken, en las rutas que el empleado no puede usar.
+// Tipado como `validar`, para que la ruta siga viendo `req.params.id` como string.
+export const soloDueno: RequestHandler<Record<string, string>> = (req, res, next) => {
+  if (req.rol !== "DUENO") {
+    return res.status(403).json({ error: "No tienes permiso para esta acción" });
+  }
+  next();
+};

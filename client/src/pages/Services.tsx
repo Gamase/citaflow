@@ -9,6 +9,7 @@ import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
 import { formatPrecio } from "../lib/format";
+import { esDueno } from "../lib/session";
 
 interface Service {
   id: string;
@@ -100,7 +101,10 @@ export default function Services() {
     }
   }
 
-  const botonNuevo = (
+  // El empleado ve los servicios (los necesita para agendar) pero no los modifica.
+  const dueno = esDueno();
+
+  const botonNuevo = dueno && (
     <Button onClick={() => setMostrarForm(true)}>
       <PlusIcon />
       Nuevo servicio
@@ -111,7 +115,11 @@ export default function Services() {
     <>
       <PageHeader
         title="Servicios"
-        description="Lo que ofrece tu negocio, con su duración y precio. La duración define cuánto bloquea cada cita."
+        description={
+          dueno
+            ? "Lo que ofrece tu negocio, con su duración y precio. La duración define cuánto bloquea cada cita."
+            : "Lo que ofrece el negocio, con su duración y precio. Solo el dueño puede modificarlos."
+        }
         action={!mostrarForm && botonNuevo}
       />
 
@@ -179,7 +187,9 @@ export default function Services() {
           <EmptyState
             icon={<TagIcon className="size-5" />}
             title="Aún no hay servicios"
-            description="Agrega el primero para poder agendar citas con él."
+            description={
+              dueno ? "Agrega el primero para poder agendar citas con él." : "El dueño todavía no ha dado de alta servicios."
+            }
             action={!mostrarForm && botonNuevo}
           />
         ) : (
@@ -189,9 +199,11 @@ export default function Services() {
                 <Th>Nombre</Th>
                 <Th align="right" className="w-32">Duración</Th>
                 <Th align="right" className="w-36">Precio</Th>
-                <Th align="right" className="w-44">
-                  <span className="sr-only">Acciones</span>
-                </Th>
+                {dueno && (
+                  <Th align="right" className="w-44">
+                    <span className="sr-only">Acciones</span>
+                  </Th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -245,16 +257,18 @@ export default function Services() {
                     <Td align="right" className="text-fg tabular-nums">
                       {formatPrecio(s.precio)}
                     </Td>
-                    <Td align="right">
-                      <div className="flex justify-end gap-4">
-                        <Button variant="link" onClick={() => startEdit(s)}>
-                          Editar
-                        </Button>
-                        <Button variant="link-danger" onClick={() => handleDelete(s.id)}>
-                          Eliminar
-                        </Button>
-                      </div>
-                    </Td>
+                    {dueno && (
+                      <Td align="right">
+                        <div className="flex justify-end gap-4">
+                          <Button variant="link" onClick={() => startEdit(s)}>
+                            Editar
+                          </Button>
+                          <Button variant="link-danger" onClick={() => handleDelete(s.id)}>
+                            Eliminar
+                          </Button>
+                        </div>
+                      </Td>
+                    )}
                   </Tr>
                 ),
               )}

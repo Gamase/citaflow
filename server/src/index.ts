@@ -6,6 +6,7 @@ import serviceRoutes from "./routes/services";
 import clientRoutes from "./routes/clients";
 import appointmentRoutes from "./routes/appointments";
 import dashboardRoutes from "./routes/dashboard";
+import userRoutes from "./routes/users";
 import { manejarErrores } from "./middleware/errores";
 
 // En DEV las variables vienen de server/.env; en Staging/Prod (Render, PM2) del entorno,
@@ -56,6 +57,7 @@ app.use("/services", serviceRoutes);
 app.use("/clients", clientRoutes);
 app.use("/appointments", appointmentRoutes);
 app.use("/dashboard", dashboardRoutes);
+app.use("/users", userRoutes);
 
 app.use(manejarErrores);
 

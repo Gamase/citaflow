@@ -41,6 +41,14 @@ export const UsersIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const BadgeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="3" width="16" height="18" rx="2" />
+    <circle cx="12" cy="10" r="2.5" />
+    <path d="M8 17a4 4 0 0 1 8 0" />
+  </Svg>
+);
+
 export const CalendarIcon = (p: IconProps) => (
   <Svg {...p}>
     <rect x="3" y="4.5" width="18" height="16" rx="2" />

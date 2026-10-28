@@ -24,7 +24,8 @@ interface Resumen {
     porEstado: Record<Estado, number>;
     total: number;
     tasaNoAsistencia: number | null;
-    ingresos: number;
+    // null para el empleado: el backend no se los manda.
+    ingresos: number | null;
   };
   totales: { clientes: number; servicios: number };
 }
@@ -93,7 +94,7 @@ export default function ResumenPage() {
         </Card>
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className={`grid gap-4 sm:grid-cols-2 ${resumen.mes.ingresos === null ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
             <Tarjeta
               titulo="Citas de hoy"
               valor={String(resumen.hoy.length)}
@@ -103,11 +104,13 @@ export default function ResumenPage() {
                   : `${resumen.hoy.filter((c) => c.estado === "PENDIENTE").length} por confirmar`
               }
             />
-            <Tarjeta
-              titulo={`Ingresos de ${mes}`}
-              valor={formatPrecio(resumen.mes.ingresos)}
-              detalle={`${resumen.mes.porEstado.COMPLETADA} citas atendidas`}
-            />
+            {resumen.mes.ingresos !== null && (
+              <Tarjeta
+                titulo={`Ingresos de ${mes}`}
+                valor={formatPrecio(resumen.mes.ingresos)}
+                detalle={`${resumen.mes.porEstado.COMPLETADA} citas atendidas`}
+              />
+            )}
             <Tarjeta
               titulo="No asistencia"
               valor={
