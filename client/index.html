@@ -2,9 +2,10 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <!-- Antes de cualquier recurso externo (fuentes de Google): los enlaces de /verificar y
-         /restablecer llevan un token en la URL y nunca debe viajar en el Referer. -->
-    <meta name="referrer" content="no-referrer" />
+    <!-- Antes de cualquier recurso externo (fuentes, botón de Google, la API): a otro sitio solo
+         viaja el origen, nunca la ruta ni el ?token= de /verificar y /restablecer (que además se
+         quita de la URL al abrirla). No "no-referrer": el botón de Google valida el origen. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0E2A3B" />

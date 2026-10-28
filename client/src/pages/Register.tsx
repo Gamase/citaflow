@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import api from "../api/client";
 import { saveSession } from "../lib/session";
 import AuthLayout from "../components/AuthLayout";
+import AccesoConGoogle from "../components/AccesoConGoogle";
 import Button from "../components/ui/Button";
 import { Field, Input } from "../components/ui/Field";
 import { apiError, useToast } from "../components/ui/useToast";
@@ -54,60 +55,62 @@ export default function Register() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <Field label="Nombre del negocio">
-          {(id) => (
-            <Input
-              id={id}
-              autoComplete="organization"
-              placeholder="Barbería El Corte"
-              value={nombreNegocio}
-              onChange={(e) => setNombreNegocio(e.target.value)}
-              required
-            />
-          )}
-        </Field>
-        <Field label="Tu nombre">
-          {(id) => (
-            <Input
-              id={id}
-              autoComplete="name"
-              value={nombreUsuario}
-              onChange={(e) => setNombreUsuario(e.target.value)}
-              required
-            />
-          )}
-        </Field>
-        <Field label="Email">
-          {(id) => (
-            <Input
-              id={id}
-              type="email"
-              autoComplete="email"
-              placeholder="tu@negocio.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          )}
-        </Field>
-        <Field label="Contraseña" hint="Mínimo 8 caracteres">
-          {(id) => (
-            <Input
-              id={id}
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          )}
-        </Field>
-        <Button type="submit" className="w-full" disabled={enviando}>
-          {enviando ? "Creando tu negocio…" : "Crear cuenta"}
-        </Button>
-      </form>
+      <AccesoConGoogle>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <Field label="Nombre del negocio">
+            {(id) => (
+              <Input
+                id={id}
+                autoComplete="organization"
+                placeholder="Barbería El Corte"
+                value={nombreNegocio}
+                onChange={(e) => setNombreNegocio(e.target.value)}
+                required
+              />
+            )}
+          </Field>
+          <Field label="Tu nombre">
+            {(id) => (
+              <Input
+                id={id}
+                autoComplete="name"
+                value={nombreUsuario}
+                onChange={(e) => setNombreUsuario(e.target.value)}
+                required
+              />
+            )}
+          </Field>
+          <Field label="Email">
+            {(id) => (
+              <Input
+                id={id}
+                type="email"
+                autoComplete="email"
+                placeholder="tu@negocio.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            )}
+          </Field>
+          <Field label="Contraseña" hint="Mínimo 8 caracteres">
+            {(id) => (
+              <Input
+                id={id}
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+              />
+            )}
+          </Field>
+          <Button type="submit" className="w-full" disabled={enviando}>
+            {enviando ? "Creando tu negocio…" : "Crear cuenta"}
+          </Button>
+        </form>
+      </AccesoConGoogle>
     </AuthLayout>
   );
 }

@@ -13,6 +13,8 @@ interface MiCuenta {
   nombre: string;
   email: string;
   emailVerificado: string | null;
+  // false si entra solo con Google: Ajustes ofrece "Crear contraseña".
+  tienePassword: boolean;
   tenant: { id: string; nombre: string };
 }
 
@@ -50,7 +52,10 @@ export default function Ajustes() {
       ) : (
         <div className="space-y-6">
           <MiCuentaForm cuenta={cuenta} onGuardado={setCuenta} />
-          <PasswordForm />
+          <PasswordForm
+            tienePassword={cuenta.tienePassword}
+            onCreada={() => setCuenta({ ...cuenta, tienePassword: true })}
+          />
           {esDueno() && <NegocioForm cuenta={cuenta} onGuardado={setCuenta} />}
         </div>
       )}
@@ -80,6 +85,12 @@ function MiCuentaForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c
 
   const cambiaNombre = nombre.trim() !== cuenta.nombre;
   const cambiaEmail = email.trim() !== cuenta.email;
+  // Cambiar el email pide la contraseña actual: sin verificar o sin contraseña, no se puede.
+  const emailBloqueado = !cuenta.emailVerificado
+    ? "Verifica tu correo actual para poder cambiarlo."
+    : !cuenta.tienePassword
+      ? "Crea una contraseña abajo para poder cambiar tu email."
+      : undefined;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -116,7 +127,7 @@ function MiCuentaForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c
           </Field>
           <Field
             label="Email"
-            hint={cuenta.emailVerificado ? undefined : "Verifica tu correo actual para poder cambiarlo."}
+            hint={emailBloqueado}
           >
             {(id) => (
               <Input
@@ -124,7 +135,7 @@ function MiCuentaForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={!cuenta.emailVerificado}
+                disabled={emailBloqueado !== undefined}
                 required
               />
             )}
@@ -154,7 +165,8 @@ function MiCuentaForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c
   );
 }
 
-function PasswordForm() {
+// Sin contraseña (entra solo con Google) la sección es "Crear contraseña" y no pide la actual.
+function PasswordForm({ tienePassword, onCreada }: { tienePassword: boolean; onCreada: () => void }) {
   const toast = useToast();
   const [actual, setActual] = useState("");
   const [nueva, setNueva] = useState("");
@@ -164,20 +176,28 @@ function PasswordForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (nueva !== confirmacion) {
-      toast.error("La contraseña nueva y su confirmación no coinciden.");
+      toast.error("La contraseña y su confirmación no coinciden.");
       return;
     }
     setGuardando(true);
     try {
-      const res = await api.patch("/me/password", { passwordActual: actual, passwordNueva: nueva });
+      const res = await api.patch("/me/password", {
+        ...(tienePassword && { passwordActual: actual }),
+        passwordNueva: nueva,
+      });
       // El token anterior ya no sirve: esta sesión sigue con el nuevo.
       localStorage.setItem("token", res.data.token);
       setActual("");
       setNueva("");
       setConfirmacion("");
-      toast.success("Contraseña cambiada. Se cerraron tus otras sesiones.");
+      toast.success(
+        tienePassword
+          ? "Contraseña cambiada. Se cerraron tus otras sesiones."
+          : "Contraseña creada. Ya puedes entrar también con tu correo y contraseña.",
+      );
+      if (!tienePassword) onCreada();
     } catch (err) {
-      toast.error(apiError(err, "No se pudo cambiar la contraseña."));
+      toast.error(apiError(err, tienePassword ? "No se pudo cambiar la contraseña." : "No se pudo crear la contraseña."));
     } finally {
       setGuardando(false);
     }
@@ -185,24 +205,30 @@ function PasswordForm() {
 
   return (
     <Seccion
-      titulo="Contraseña"
-      descripcion="Al cambiarla se cierran tus sesiones abiertas en otros dispositivos; esta sigue abierta."
+      titulo={tienePassword ? "Contraseña" : "Crear contraseña"}
+      descripcion={
+        tienePassword
+          ? "Al cambiarla se cierran tus sesiones abiertas en otros dispositivos; esta sigue abierta."
+          : "Entras con Google. Con una contraseña también podrás entrar con tu correo."
+      }
     >
       <form onSubmit={handleSubmit}>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Contraseña actual">
-            {(id) => (
-              <Input
-                id={id}
-                type="password"
-                autoComplete="current-password"
-                value={actual}
-                onChange={(e) => setActual(e.target.value)}
-                required
-              />
-            )}
-          </Field>
-          <Field label="Contraseña nueva" hint="Mínimo 8 caracteres.">
+        <div className={`grid gap-4 ${tienePassword ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+          {tienePassword && (
+            <Field label="Contraseña actual">
+              {(id) => (
+                <Input
+                  id={id}
+                  type="password"
+                  autoComplete="current-password"
+                  value={actual}
+                  onChange={(e) => setActual(e.target.value)}
+                  required
+                />
+              )}
+            </Field>
+          )}
+          <Field label={tienePassword ? "Contraseña nueva" : "Contraseña"} hint="Mínimo 8 caracteres.">
             {(id) => (
               <Input
                 id={id}
@@ -215,7 +241,7 @@ function PasswordForm() {
               />
             )}
           </Field>
-          <Field label="Confirma la nueva">
+          <Field label={tienePassword ? "Confirma la nueva" : "Confírmala"}>
             {(id) => (
               <Input
                 id={id}
@@ -231,7 +257,7 @@ function PasswordForm() {
         </div>
         <div className="mt-5 flex justify-end">
           <Button type="submit" disabled={guardando}>
-            Cambiar contraseña
+            {tienePassword ? "Cambiar contraseña" : "Crear contraseña"}
           </Button>
         </div>
       </form>

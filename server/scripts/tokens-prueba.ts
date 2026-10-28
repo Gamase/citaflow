@@ -8,6 +8,8 @@
 //   npx tsx scripts/tokens-prueba.ts emitir  <email> <TIPO>      → token nuevo (invalida los anteriores)
 //   npx tsx scripts/tokens-prueba.ts vencido <email> <TIPO>      → token ya vencido
 //   npx tsx scripts/tokens-prueba.ts contar  <email> <TIPO>      → cuántos tokens de ese tipo tiene
+//   npx tsx scripts/tokens-prueba.ts sin-password <email>         → crea un negocio con un dueño
+//        sin contraseña (como si se hubiera registrado con Google) e imprime "userId tenantId"
 //   TIPO: VERIFICACION | RESET
 //
 // BD: DATABASE_URL del entorno. Solo con USAR_ENV_DE_DEV=1 (pruebas.sh lo pone en `dev`) la
@@ -38,6 +40,25 @@ async function main() {
     const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
     if (comando === "userid") {
       console.log(user?.id ?? "");
+      return;
+    }
+    if (comando === "sin-password") {
+      const tenant = await prisma.tenant.create({
+        data: {
+          nombre: "Prueba sin contraseña",
+          users: {
+            create: {
+              email: email as string,
+              nombre: "Dueño con Google",
+              rol: "DUENO",
+              googleId: `prueba-${crypto.randomUUID()}`,
+              emailVerificado: new Date(),
+            },
+          },
+        },
+        include: { users: true },
+      });
+      console.log(tenant.users[0]!.id, tenant.id);
       return;
     }
     const tipo = tipoTexto === "RESET" ? "RESET" : "VERIFICACION";

@@ -14,6 +14,16 @@ export const limiteLogin = rateLimit({
   message: { error: "Demasiados intentos de inicio de sesión. Espera 15 minutos e intenta de nuevo." },
 });
 
+// Login con Google: igual que el login (por IP, solo los fallidos), con su propio contador.
+export const limiteGoogle = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Demasiados intentos de inicio de sesión. Espera 15 minutos e intenta de nuevo." },
+});
+
 // Register: cuenta solo registros exitosos. El abuso es crear negocios en masa;
 // los errores de validación no cuentan. 10 por hora: en la escuela muchos comparten IP.
 export const limiteRegistro = rateLimit({

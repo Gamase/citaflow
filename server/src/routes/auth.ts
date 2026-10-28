@@ -1,16 +1,20 @@
-import { Router } from "express";
+import { Router, RequestHandler, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../db";
 import { firmarToken, segundoActual } from "../middleware/auth";
 import { Prisma } from "@prisma/client";
 import { validar } from "../middleware/validar";
-import { limiteLogin, limiteOlvideCorreo, limiteOlvideIp, limiteRegistro } from "../middleware/limites";
+import { limiteGoogle, limiteLogin, limiteOlvideCorreo, limiteOlvideIp, limiteRegistro } from "../middleware/limites";
 import {
+  googleRegistroSchema,
+  googleSchema,
   loginSchema,
   olvideSchema,
   registroSchema,
   restablecerSchema,
   verificarCorreoSchema,
+  GoogleInput,
+  GoogleRegistroInput,
   LoginInput,
   OlvideInput,
   RegistroInput,
@@ -18,6 +22,7 @@ import {
   VerificarCorreoInput,
 } from "../schemas";
 import { consumirToken, mandarRestablecer, mandarVerificacion } from "../tokensCorreo";
+import { verificarCredencialGoogle, PerfilGoogle } from "../google";
 
 const ENLACE_INVALIDO = "El enlace no es válido o ya venció. Pide uno nuevo.";
 
@@ -82,7 +87,8 @@ router.post("/login", limiteLogin, validar(loginSchema), async (req, res) => {
     include: { tenant: { select: { id: true, nombre: true } } },
   });
 
-  if (!user) {
+  // Sin contraseña (entra solo con Google): la misma respuesta que una contraseña incorrecta.
+  if (!user || user.password === null) {
     return res.status(401).json({ error: "Credenciales inválidas" });
   }
 
@@ -103,6 +109,128 @@ router.post("/login", limiteLogin, validar(loginSchema), async (req, res) => {
     token,
     tenant: user.tenant,
     user: { nombre: user.nombre, email: user.email, rol: user.rol, verificado: user.emailVerificado !== null },
+  });
+});
+
+// --- Login con Google ---
+
+// Sin GOOGLE_CLIENT_ID el server arranca igual y estas rutas responden 503 (existen, pero
+// no están disponibles en este entorno); el front tampoco muestra el botón.
+const googleConfigurado: RequestHandler = (_req, res, next) => {
+  if (process.env.GOOGLE_CLIENT_ID) return next();
+  res.status(503).json({ error: "El inicio de sesión con Google no está configurado." });
+};
+
+// Verifica la credencial; si no sirve responde un 401 genérico (el motivo queda en el log).
+async function perfilDeGoogle(credential: string, res: Response): Promise<PerfilGoogle | null> {
+  const perfil = await verificarCredencialGoogle(credential, process.env.GOOGLE_CLIENT_ID as string);
+  if (!perfil) {
+    res.status(401).json({ error: "No se pudo iniciar sesión con Google. Intenta de nuevo." });
+  }
+  return perfil;
+}
+
+// Entrar con Google. Con cuenta: entra (y la primera vez se vincula). Sin cuenta: no se crea
+// nada; el front pide el nombre del negocio y llama a /google/registro.
+router.post("/google", limiteGoogle, validar(googleSchema), googleConfigurado, async (req, res) => {
+  const perfil = await perfilDeGoogle((req.body as GoogleInput).credential, res);
+  if (!perfil) return;
+
+  // Primero por la cuenta de Google ya vinculada (sigue entrando aunque haya cambiado su
+  // email en CitaFlow); si no, por el email, sin importar mayúsculas.
+  const conTenant = { tenant: { select: { id: true, nombre: true } } };
+  const user =
+    (await prisma.user.findUnique({ where: { googleId: perfil.sub }, include: conTenant })) ??
+    (await prisma.user.findFirst({
+      where: { email: { equals: perfil.email, mode: "insensitive" } },
+      include: conTenant,
+    }));
+
+  if (!user) {
+    return res.json({ necesitaRegistro: true, nombre: perfil.nombre, email: perfil.email });
+  }
+  if (!user.activo) {
+    return res.status(403).json({ error: "Tu usuario está desactivado. Habla con el dueño del negocio." });
+  }
+  if (user.googleId !== null && user.googleId !== perfil.sub) {
+    return res.status(409).json({ error: "Tu cuenta de CitaFlow ya está vinculada a otra cuenta de Google." });
+  }
+
+  const ahora = segundoActual();
+  let verificado = user.emailVerificado !== null;
+  if (user.googleId === null) {
+    // Primera vez con Google: se vincula, y Google ya probó que el correo es suyo.
+    // Si la cuenta NO estaba verificada, su contraseña la puso alguien que nunca probó tener
+    // ese correo (pudo registrarlo otra persona antes que el dueño real: "pre-account
+    // takeover"). Esa contraseña se borra y se cierran sus sesiones; si quiere contraseña,
+    // la crea en Ajustes.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        googleId: perfil.sub,
+        emailVerificado: user.emailVerificado ?? new Date(),
+        ...(!verificado && { password: null, passwordCambiadaEn: ahora }),
+      },
+    });
+    verificado = true;
+  }
+
+  res.json({
+    token: firmarToken(user.id, user.tenantId, ahora),
+    tenant: user.tenant,
+    user: { nombre: user.nombre, email: user.email, rol: user.rol, verificado },
+  });
+});
+
+// Crear negocio con Google: como /register, pero sin contraseña y con el correo ya verificado.
+router.post("/google/registro", limiteRegistro, validar(googleRegistroSchema), googleConfigurado, async (req, res) => {
+  const { credential, nombreNegocio } = req.body as GoogleRegistroInput;
+  const perfil = await perfilDeGoogle(credential, res);
+  if (!perfil) return;
+
+  // Si mientras ponía el nombre del negocio alguien se registró con ese correo, que entre
+  // por /google (que vincula) en lugar de crear otra cuenta.
+  const yaExiste = await prisma.user.findFirst({
+    where: { OR: [{ googleId: perfil.sub }, { email: { equals: perfil.email, mode: "insensitive" } }] },
+    select: { id: true },
+  });
+  if (yaExiste) {
+    return res.status(409).json({ error: "Ya hay una cuenta con ese correo. Inicia sesión con Google." });
+  }
+
+  let tenant;
+  try {
+    tenant = await prisma.tenant.create({
+      data: {
+        nombre: nombreNegocio,
+        users: {
+          create: {
+            email: perfil.email,
+            nombre: perfil.nombre,
+            rol: "DUENO",
+            googleId: perfil.sub,
+            emailVerificado: new Date(),
+          },
+        },
+      },
+      include: { users: true },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ error: "Ya hay una cuenta con ese correo. Inicia sesión con Google." });
+    }
+    throw err;
+  }
+
+  const user = tenant.users[0];
+  if (!user) {
+    return res.status(500).json({ error: "No se pudo crear el usuario" });
+  }
+
+  res.status(201).json({
+    token: firmarToken(user.id, tenant.id),
+    tenant: { id: tenant.id, nombre: tenant.nombre },
+    user: { nombre: user.nombre, email: user.email, rol: user.rol, verificado: true },
   });
 });
 

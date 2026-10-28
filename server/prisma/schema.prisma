@@ -36,7 +36,11 @@ enum Rol {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
-  password  String
+  // null = entra solo con Google (se registró así). Puede crear una en Ajustes o con "olvidé".
+  password  String?
+  // El `sub` de su cuenta de Google, guardado la primera vez que entra con Google. Con él se
+  // le reconoce aunque luego cambie su email en CitaFlow.
+  googleId  String?  @unique
   nombre    String
   rol       Rol
   // Nada se borra: un usuario desactivado pierde el acceso en su siguiente petición.

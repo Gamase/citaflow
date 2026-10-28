@@ -7,8 +7,11 @@
 # Las cuentas salen de prisma/seed-data.ts (los dos primeros negocios del entorno),
 # así que la BD tiene que tener ese seed, de hoy o de ayer (el resumen del dashboard se
 # compara contra las citas que sembró, que van de -14 a +7 días). Deja los datos como estaban, salvo unas
-# citas CANCELADAS ~40 días adelante y dos empleados de prueba activos en el negocio A (nada
-# se borra en CitaFlow; el siguiente seed los limpia).
+# citas CANCELADAS ~40 días adelante, dos empleados de prueba activos en el negocio A y, con
+# BD, negocios de prueba sueltos (nada se borra en CitaFlow; el siguiente seed los limpia).
+#
+# Cada corrida hace 6 logins fallidos y el límite es 10 por IP cada 15 min: una segunda corrida
+# seguida desde la misma IP da 429 en los logins. Espera 15 min (o en DEV reinicia la API).
 #
 # Variables opcionales:
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
@@ -178,6 +181,7 @@ else
   if [ "$(curl -s -m 90 -o /dev/null -w "%{http_code}" "$API/clients" -H "Authorization: Bearer $CONTROL")" != "200" ]; then
     echo "⏭️  Se salta: JWT_SECRET no es el de este entorno (el token de control no pasó)."
   else
+    CON_JWT=1
     t "token de control (ids reales)"  200 GET /clients "$CONTROL"
     t "token con ids inexistentes"     401 GET /clients "$(firmar "$UUID0" "$UUID0")"
     t "token con negocio inexistente (crear)" 401 POST /clients "$(firmar "$UID_A" "$UUID0")" '{"nombre":"X","telefono":"5500000000"}'
@@ -521,6 +525,7 @@ t "cambiar a un email repetido"    409 PATCH /me "$TA" "{\"email\":\"$E_EMAIL\",
 # Intentos con contraseña incorrecta: con el empleado temporal, para que el límite
 # (por usuario) no se acumule en las cuentas del seed entre corridas.
 t "cambiar email, contraseña mal"  400 PATCH /me "$TN" "{\"email\":\"otro.$RANDOM@ejemplo.test\",\"passwordActual\":\"incorrecta\"}"
+t "cambiar contraseña sin la actual" 400 PATCH /me/password "$TN" '{"passwordNueva":"cambiada-123"}'
 t "cambiar contraseña, actual mal" 400 PATCH /me/password "$TN" '{"passwordActual":"incorrecta","passwordNueva":"cambiada-123"}'
 h "contraseña con rate limit"      sí RateLimit-Policy PATCH /me/password "" "Authorization: Bearer $TN" '{"passwordActual":"incorrecta","passwordNueva":"cambiada-123"}'
 t "nueva igual a la actual"        400 PATCH /me/password "$TN" '{"passwordActual":"12345678","passwordNueva":"12345678"}'
@@ -672,6 +677,61 @@ if [ -n "$CON_BD" ]; then
   TN=$(login "$NUEVO_EMAIL" 12345678)
 else
   echo "⏭️  Se saltan los casos con enlaces: define DATABASE_URL (la BD de esta API) para correrlos."
+fi
+
+echo "== Login con Google"
+# Solo casos de rechazo: un ID token válido solo lo puede firmar Google. Si la API no tiene
+# GOOGLE_CLIENT_ID, todo /auth/google* responde 503 (salvo un body inválido: 400). La mayoría
+# de los rechazos van a /google/registro, cuyo límite solo cuenta los registros exitosos, para
+# no gastar los intentos fallidos por IP de /google.
+G_CODE=$(curl -s -m 90 -o /dev/null -w "%{http_code}" -X POST "$API/auth/google/registro" -H "$J" -d '{"credential":"x","nombreNegocio":"X"}')
+if [ "$G_CODE" = "503" ]; then G=503; echo "   (esta API no tiene GOOGLE_CLIENT_ID: se espera 503)"; else G=401; fi
+# El aud correcto, para que lo único que falle sea la firma o el algoritmo.
+CID=${GOOGLE_CLIENT_ID:-}
+[ -z "$CID" ] && [ "$LABEL" = dev ] && CID=$(sed -n 's/^GOOGLE_CLIENT_ID="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' .env 2>/dev/null)
+# JWT con la forma de uno de Google, firmado por nosotros: alg, kid.
+jwt_falso() { node -e '
+  const c = require("crypto"); const [alg, kid, aud] = process.argv.slice(1);
+  const b = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const ahora = Math.floor(Date.now() / 1000);
+  const datos = b({ alg, kid, typ: "JWT" }) + "." + b({ iss: "https://accounts.google.com", aud, sub: "1234567890",
+    email: "falso@ejemplo.test", email_verified: true, name: "Falso", iat: ahora, exp: ahora + 3600 });
+  const firma = alg === "RS256"
+    ? c.sign("RSA-SHA256", Buffer.from(datos), c.generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey)
+    : alg === "HS256" ? c.createHmac("sha256", "secreto-inventado").update(datos).digest() : Buffer.alloc(0);
+  console.log(datos + "." + firma.toString("base64url"));' "$1" "$2" "${CID:-sin-client-id}"; }
+g_body() { printf '{"credential":"%s","nombreNegocio":"Negocio falso"}' "$1"; }
+t "google: credencial basura"      $G POST /auth/google "" '{"credential":"no-es-un-jwt"}'
+t "google: llave propia, kid inventado" $G POST /auth/google "" "{\"credential\":\"$(jwt_falso RS256 kid-inventado)\"}"
+t "google registro: sin nombreNegocio" 400 POST /auth/google/registro "" '{"credential":"no-es-un-jwt"}'
+t "google registro: sin credencial" 400 POST /auth/google/registro "" '{"nombreNegocio":"X"}'
+t "google registro: basura"        $G POST /auth/google/registro "" "$(g_body no-es-un-jwt)"
+t "google registro: alg none"      $G POST /auth/google/registro "" "$(g_body "$(jwt_falso none kid-inventado)")"
+t "google registro: HS256"         $G POST /auth/google/registro "" "$(g_body "$(jwt_falso HS256 kid-inventado)")"
+KID_REAL=$(curl -s -m 30 https://www.googleapis.com/oauth2/v3/certs | campo - keys.0.kid 2>/dev/null)
+if [ -n "$KID_REAL" ]; then
+  t "google registro: kid real, llave propia" $G POST /auth/google/registro "" "$(g_body "$(jwt_falso RS256 "$KID_REAL")")"
+else
+  echo "⏭️  Se salta el caso con el kid real: no se pudo bajar el JWKS de Google."
+fi
+
+if [ -n "$CON_BD" ]; then
+  # Dueño sin contraseña, como si se hubiera registrado con Google (lo crea el helper en la BD).
+  SIN_PASS="google.$RANDOM$RANDOM@ejemplo.test"
+  read -r SP_UID SP_TID <<< "$(tk sin-password "$SIN_PASS")"
+  t "login: usuario sin contraseña"  401 POST /auth/login "" "{\"email\":\"$SIN_PASS\",\"password\":\"12345678\"}"
+  cumple "  mismo error que contraseña mal" "r.error === 'Credenciales inválidas'"
+  if [ -n "${CON_JWT:-}" ]; then
+    TSP=$(firmar "$SP_UID" "$SP_TID")
+    t "sin contraseña: GET /me"        200 GET /me "$TSP"
+    cumple "  tienePassword false, sin hash" "r.tienePassword === false && !('password' in r)"
+    t "sin contraseña: cambiar email"  400 PATCH /me "$TSP" "{\"email\":\"otro.$RANDOM@ejemplo.test\",\"passwordActual\":\"x\"}"
+    t "crear contraseña (sin la actual)" 200 PATCH /me/password "$TSP" '{"passwordNueva":"creada-123"}'
+    t "  y ya entra con ella"          200 POST /auth/login "" "{\"email\":\"$SIN_PASS\",\"password\":\"creada-123\"}"
+  else
+    t "olvidé le pone contraseña"      200 POST /auth/restablecer "" "{\"token\":\"$(tk emitir "$SIN_PASS" RESET)\",\"password\":\"creada-123\"}"
+    t "  y ya entra con ella"          200 POST /auth/login "" "{\"email\":\"$SIN_PASS\",\"password\":\"creada-123\"}"
+  fi
 fi
 
 if [ "${PROBAR_429:-}" = "1" ]; then

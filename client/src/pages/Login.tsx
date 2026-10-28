@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import api from "../api/client";
 import { saveSession } from "../lib/session";
 import AuthLayout from "../components/AuthLayout";
+import AccesoConGoogle from "../components/AccesoConGoogle";
 import Button from "../components/ui/Button";
 import { Field, Input } from "../components/ui/Field";
 import { apiError, useToast } from "../components/ui/useToast";
@@ -46,51 +47,53 @@ export default function Login() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {restablecida && (
-          <p role="status" className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-700">
-            Tu contraseña cambió. Entra con la nueva.
-          </p>
-        )}
-        {sesionExpirada && (
-          <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Tu sesión expiró, vuelve a iniciar sesión.
-          </p>
-        )}
-        <Field label="Email">
-          {(id) => (
-            <Input
-              id={id}
-              type="email"
-              autoComplete="email"
-              placeholder="tu@negocio.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+      <AccesoConGoogle>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {restablecida && (
+            <p role="status" className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-700">
+              Tu contraseña cambió. Entra con la nueva.
+            </p>
           )}
-        </Field>
-        <div>
-          <Field label="Contraseña">
+          {sesionExpirada && (
+            <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Tu sesión expiró, vuelve a iniciar sesión.
+            </p>
+          )}
+          <Field label="Email">
             {(id) => (
               <Input
                 id={id}
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                type="email"
+                autoComplete="email"
+                placeholder="tu@negocio.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             )}
           </Field>
-          <Link to="/olvide" className="mt-2 inline-block text-sm font-medium text-teal-700 hover:underline">
-            ¿Olvidaste tu contraseña?
-          </Link>
-        </div>
-        <Button type="submit" className="w-full" disabled={enviando}>
-          {enviando ? "Entrando…" : "Entrar"}
-        </Button>
-      </form>
+          <div>
+            <Field label="Contraseña">
+              {(id) => (
+                <Input
+                  id={id}
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              )}
+            </Field>
+            <Link to="/olvide" className="mt-2 inline-block text-sm font-medium text-teal-700 hover:underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
+          <Button type="submit" className="w-full" disabled={enviando}>
+            {enviando ? "Entrando…" : "Entrar"}
+          </Button>
+        </form>
+      </AccesoConGoogle>
     </AuthLayout>
   );
 }

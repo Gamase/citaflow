@@ -35,15 +35,17 @@ async function passwordActualValida(actual: string, hash: string, res: Response)
   return false;
 }
 
+// tienePassword: si entra solo con Google, Ajustes ofrece "Crear contraseña". El hash nunca sale.
 router.get("/", async (req, res) => {
   const user = await req.db.user.findFirst({
     where: { id: req.userId as string, tenantId: req.tenantId as string },
-    select: MI_CUENTA,
+    select: { ...MI_CUENTA, password: true },
   });
   if (!user) {
     return res.status(404).json({ error: "No encontrado" });
   }
-  res.json(user);
+  const { password, ...cuenta } = user;
+  res.json({ ...cuenta, tienePassword: password !== null });
 });
 
 // Solo cambiar el email pide contraseña, y solo entonces aplica el límite de intentos.
@@ -63,7 +65,12 @@ router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res)
     return res.status(403).json({ error: "Verifica tu correo actual antes de cambiarlo. Revisa tu bandeja o pide otro enlace." });
   }
 
-  if (email !== undefined && !(await passwordActualValida(passwordActual as string, user.password, res))) {
+  // Cambiar el email pide la contraseña actual; quien entra solo con Google primero crea una.
+  if (email !== undefined && user.password === null) {
+    return res.status(400).json({ error: "Crea una contraseña antes de cambiar tu email." });
+  }
+
+  if (email !== undefined && !(await passwordActualValida(passwordActual as string, user.password as string, res))) {
     return;
   }
 
@@ -83,7 +90,7 @@ router.patch("/", validar(miCuentaSchema), limiteSiCambiaEmail, async (req, res)
         console.error("No se pudo preparar el correo de verificación:", err instanceof Error ? err.message : err);
       }
     }
-    res.json(actualizado);
+    res.json({ ...actualizado, tienePassword: user.password !== null });
   } catch (err) {
     // El email es único en todo CitaFlow (con él se hace login), no solo en el negocio.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -108,6 +115,7 @@ router.post("/reenviar-verificacion", limiteReenvio, async (req, res) => {
 
 // Cambia la contraseña y cierra las otras sesiones: verificarToken rechaza los tokens
 // emitidos antes de passwordCambiadaEn. Esta sesión sigue con el token nuevo que se regresa.
+// Si aún no tiene (entra solo con Google), la crea sin pedir la actual.
 router.patch("/password", validar(miPasswordSchema), limiteContrasena, async (req, res) => {
   const { passwordActual, passwordNueva } = req.body as MiPasswordInput;
   const user = await yo(req.db, req.userId as string, req.tenantId as string);
@@ -115,8 +123,13 @@ router.patch("/password", validar(miPasswordSchema), limiteContrasena, async (re
     return res.status(404).json({ error: "No encontrado" });
   }
 
-  if (!(await passwordActualValida(passwordActual, user.password, res))) {
-    return;
+  if (user.password !== null) {
+    if (passwordActual === undefined) {
+      return res.status(400).json({ error: "Escribe tu contraseña actual" });
+    }
+    if (!(await passwordActualValida(passwordActual, user.password, res))) {
+      return;
+    }
   }
 
   // El mismo segundo para la marca y para el `iat` del token nuevo.

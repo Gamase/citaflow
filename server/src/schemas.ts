@@ -29,6 +29,19 @@ export const registroSchema = z.object({
     .min(8, "La contraseña debe tener al menos 8 caracteres"),
 });
 
+// Login con Google: el ID token que da Google Identity Services al front.
+export const googleSchema = z.object({
+  credential: z
+    .string({ error: "Falta la credencial de Google" })
+    .min(1, "Falta la credencial de Google")
+    .max(4096, "La credencial de Google no es válida"),
+});
+
+// Registro con Google: la misma credencial (se vuelve a verificar) más el nombre del negocio.
+export const googleRegistroSchema = googleSchema.extend({
+  nombreNegocio: texto("El nombre del negocio"),
+});
+
 export const loginSchema = z.object({
   email: texto("El email"),
   password: z.string({ error: "La contraseña es obligatoria" }).min(1, "La contraseña es obligatoria"),
@@ -90,9 +103,10 @@ export const miCuentaSchema = z
     message: "Para cambiar tu email escribe tu contraseña actual",
   });
 
+// Sin passwordActual solo si aún no tiene contraseña (entra con Google): la ruta lo revisa.
 export const miPasswordSchema = z
   .object({
-    passwordActual,
+    passwordActual: passwordActual.optional(),
     passwordNueva: registroSchema.shape.password,
   })
   .refine((d) => d.passwordNueva !== d.passwordActual, "La contraseña nueva debe ser distinta de la actual");
@@ -216,6 +230,8 @@ export const filtroCitasSchema = z
 
 export type RegistroInput = z.infer<typeof registroSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type GoogleInput = z.infer<typeof googleSchema>;
+export type GoogleRegistroInput = z.infer<typeof googleRegistroSchema>;
 export type VerificarCorreoInput = z.infer<typeof verificarCorreoSchema>;
 export type OlvideInput = z.infer<typeof olvideSchema>;
 export type RestablecerInput = z.infer<typeof restablecerSchema>;
