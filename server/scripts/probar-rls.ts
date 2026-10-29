@@ -42,6 +42,21 @@ async function main() {
 
   try {
     const host = new URL(process.env.DATABASE_URL ?? "").host;
+
+    // Solo la conexión inicial se reintenta (Render free a veces rechaza la primera, sobre todo
+    // justo después del seed). Ya conectado, nada se reintenta: una falla de RLS sale tal cual.
+    const { Prisma } = await import("@prisma/client");
+    for (let intento = 1; ; intento++) {
+      try {
+        await prisma.$connect();
+        break;
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientInitializationError) || intento === 3) throw err;
+        console.log(`No se pudo conectar (intento ${intento} de 3): ${err.message.trim().split("\n")[0]}. Reintento en 2 s…`);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+
     const [rol] = await prisma.$queryRaw<{ usuario: string; super: boolean; bypass: boolean }[]>`
       SELECT current_user AS usuario, rolsuper AS super, rolbypassrls AS bypass
       FROM pg_roles WHERE rolname = current_user`;
