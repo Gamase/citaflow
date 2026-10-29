@@ -19,6 +19,8 @@
 #                              ajustar TRUST_PROXY). Ej.: IP_REAL=$(curl -s -4 https://api.ipify.org)
 #   JWT_SECRET=<el del entorno> prueba que un token bien firmado pero de un usuario o negocio
 #                              que ya no existe dé 401. Sin ella ese caso se salta.
+#   ESTRICTO=1                 falla si algún caso se salta (⏭️). El CI lo usa: ahí no debe
+#                              saltarse nada.
 #   PROBAR_429=1               al final fuerza el rate limit del login (429). Deja tu IP
 #                              bloqueada 15 min para login fallido: úsalo solo en local.
 
@@ -51,6 +53,10 @@ trap 'rm -f "$RESP"' EXIT
 J="Content-Type: application/json"
 FALLAS=0
 TOTAL=0
+SALTADOS=0
+
+# Un caso (o grupo) que no se pudo correr. Con ESTRICTO=1 hace fallar la corrida al final.
+saltar() { SALTADOS=$((SALTADOS + 1)); echo "⏭️  $1"; }
 
 # Lee un campo del último JSON recibido (o de stdin con "-").
 campo() { node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1]==="-"?0:process.argv[1])); const v=process.argv[2].split(".").reduce((o,k)=>o?.[k],d); console.log(v ?? "")' "$1" "$2"; }
@@ -169,7 +175,7 @@ t "register email repetido"        409 POST /auth/register "" "{\"nombreNegocio\
 
 echo "== Token de un usuario o negocio que no existe"
 if [ -z "${JWT_SECRET:-}" ]; then
-  echo "⏭️  Se salta: define JWT_SECRET (el del entorno que pruebas) para correr este caso."
+  saltar "Se salta: define JWT_SECRET (el del entorno que pruebas) para correr este caso."
 else
   # Datos del payload de un token (sin verificar la firma: solo para leer los ids).
   payload() { node -e 'const p = process.argv[1].split(".")[1]; console.log(JSON.parse(Buffer.from(p, "base64url"))[process.argv[2]])' "$1" "$2"; }
@@ -179,7 +185,7 @@ else
   # Si no, el secreto no es el de este entorno y un 401 no probaría nada.
   CONTROL=$(firmar "$UID_A" "$(payload "$TA" tenantId)")
   if [ "$(curl -s -m 90 -o /dev/null -w "%{http_code}" "$API/clients" -H "Authorization: Bearer $CONTROL")" != "200" ]; then
-    echo "⏭️  Se salta: JWT_SECRET no es el de este entorno (el token de control no pasó)."
+    saltar "Se salta: JWT_SECRET no es el de este entorno (el token de control no pasó)."
   else
     CON_JWT=1
     t "token de control (ids reales)"  200 GET /clients "$CONTROL"
@@ -676,7 +682,7 @@ if [ -n "$CON_BD" ]; then
   t "regresarle su contraseña"       200 POST /auth/restablecer "" "{\"token\":\"$(tk emitir "$NUEVO_EMAIL" RESET)\",\"password\":\"12345678\"}"
   TN=$(login "$NUEVO_EMAIL" 12345678)
 else
-  echo "⏭️  Se saltan los casos con enlaces: define DATABASE_URL (la BD de esta API) para correrlos."
+  saltar "Se saltan los casos con enlaces: define DATABASE_URL (la BD de esta API) para correrlos."
 fi
 
 echo "== Login con Google"
@@ -712,7 +718,7 @@ KID_REAL=$(curl -s -m 30 https://www.googleapis.com/oauth2/v3/certs | campo - ke
 if [ -n "$KID_REAL" ]; then
   t "google registro: kid real, llave propia" $G POST /auth/google/registro "" "$(g_body "$(jwt_falso RS256 "$KID_REAL")")"
 else
-  echo "⏭️  Se salta el caso con el kid real: no se pudo bajar el JWKS de Google."
+  saltar "Se salta el caso con el kid real: no se pudo bajar el JWKS de Google."
 fi
 
 if [ -n "$CON_BD" ]; then
@@ -745,5 +751,9 @@ if [ "${PROBAR_429:-}" = "1" ]; then
 fi
 
 echo
-echo "Resultado: $((TOTAL - FALLAS))/$TOTAL como se esperaba."
+echo "Resultado: $((TOTAL - FALLAS))/$TOTAL como se esperaba. Saltados: $SALTADOS."
+if [ "${ESTRICTO:-}" = "1" ] && [ "$SALTADOS" -gt 0 ]; then
+  echo "ESTRICTO=1: $SALTADOS grupo(s) de casos se saltaron; cuenta como falla." >&2
+  exit 1
+fi
 [ "$FALLAS" -eq 0 ]

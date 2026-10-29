@@ -87,6 +87,8 @@ jobs:
       CORS_ORIGIN: http://localhost:5173
       TRUST_PROXY: "0"
       FRONTEND_URL: http://localhost:5173
+      # pruebas.sh y probar-rls.ts fallan si algún caso se salta o si RLS no está activo.
+      ESTRICTO: "1"
       # Sin RESEND_API_KEY (correos a la consola) ni GOOGLE_CLIENT_ID (Google responde 503).
     defaults:
       run:
