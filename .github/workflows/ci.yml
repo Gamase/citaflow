@@ -54,3 +54,84 @@ jobs:
         env:
           VITE_API_URL: https://ci.invalid
         run: npm run build
+
+  # Pruebas completas contra una API real: Postgres con los mismos roles que DEV (la API con
+  # citaflow_app, sin superusuario ni BYPASSRLS; migraciones y seed con el admin), seed `dev`,
+  # pruebas.sh y probar-rls.ts. Sin secretos reales: todo lo de abajo es solo de prueba.
+  pruebas:
+    name: API - pruebas.sh y RLS
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        # Los nombres que espera scripts/rol-app-dev.sql (los de docker-compose de DEV).
+        env:
+          POSTGRES_USER: citaflow_user
+          POSTGRES_PASSWORD: citaflow_ci_pass
+          POSTGRES_DB: citaflow_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U citaflow_user -d citaflow_db"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # El seed arma las citas en hora de Tijuana y pruebas.sh calcula "hoy" con la hora local:
+      # en UTC, por la tarde ya sería "mañana" y el Resumen fallaría según la hora del push.
+      TZ: America/Tijuana
+      DATABASE_URL_ADMIN: postgresql://citaflow_user:citaflow_ci_pass@localhost:5432/citaflow_db
+      DATABASE_URL: postgresql://citaflow_app:citaflow_app_pass@localhost:5432/citaflow_db
+      JWT_SECRET: secreto-solo-para-ci-no-usar-en-ningun-entorno
+      CORS_ORIGIN: http://localhost:5173
+      TRUST_PROXY: "0"
+      FRONTEND_URL: http://localhost:5173
+      # Sin RESEND_API_KEY (correos a la consola) ni GOOGLE_CLIENT_ID (Google responde 503).
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Rol citaflow_app (como en DEV)
+        run: psql "$DATABASE_URL_ADMIN" -v ON_ERROR_STOP=1 -f scripts/rol-app-dev.sql
+
+      - name: Migrar (admin)
+        run: DATABASE_URL="$DATABASE_URL_ADMIN" npx prisma migrate deploy
+
+      - name: Seed dev (admin)
+        run: DATABASE_URL="$DATABASE_URL_ADMIN" SEED_LABEL=dev npx tsx prisma/seed.ts
+
+      - name: Arrancar la API (citaflow_app)
+        run: |
+          nohup npx tsx src/index.ts > api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "La API no respondió /health en 30 s"
+          exit 1
+
+      - name: pruebas.sh
+        run: ORIGEN_OK=http://localhost:5173 bash scripts/pruebas.sh http://localhost:3000 dev
+
+      - name: probar-rls.ts
+        run: npx tsx scripts/probar-rls.ts
+
+      - name: Log de la API (si algo falló)
+        if: failure()
+        run: cat api.log
