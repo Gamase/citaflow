@@ -14,6 +14,8 @@
 //   2. Sin tenant fijado (prisma base) → 0 filas (falla cerrado).
 //   3. Con el cliente de A, crear un cliente con el tenantId de B → error de la política.
 //   4. Con el cliente de A, modificar un cliente de B sin where tenantId → 0 filas.
+//
+// ESTRICTO=1 (el CI lo usa): también falla si algo se salta (⏭️), p. ej. si RLS no está activo.
 
 try {
   process.loadEnvFile();
@@ -28,8 +30,10 @@ async function main() {
   // Después de cargar .env: db.ts crea el PrismaClient al importarse.
   const { prisma, clienteDelTenant } = await import("../src/db");
   let fallas = 0;
+  let saltados = 0;
   const linea = (ok: boolean | null, desc: string, detalle = "") => {
     if (ok === false) fallas++;
+    if (ok === null) saltados++;
     console.log(`${ok === null ? "⏭️ " : ok ? "✅" : "❌"} ${desc.padEnd(46)} ${detalle}`);
   };
 
@@ -91,7 +95,7 @@ async function main() {
     console.log(`\nNegocio A: ${a.nombre}  |  Negocio B: ${b.nombre}\n`);
     if (!activo) {
       console.log("Sin RLS activo los casos de abajo no aplican (fase 1): se saltan.");
-      return fallas;
+      return conEstricto(fallas, saltados);
     }
 
     const dbA = clienteDelTenant(a.id);
@@ -137,12 +141,21 @@ async function main() {
     if (deB) {
       const { count } = await dbA.client.updateMany({ where: { id: deB.id }, data: { nombre: "Intruso" } });
       linea(count === 0, "cliente de A modifica un cliente de B por id", `${count} filas modificadas`);
+    } else {
+      linea(null, "cliente de A modifica un cliente de B por id", "B no tiene clientes");
     }
 
-    return fallas;
+    return conEstricto(fallas, saltados);
   } finally {
     await prisma.$disconnect();
   }
+}
+
+// Con ESTRICTO=1 cada caso saltado cuenta como falla.
+function conEstricto(fallas: number, saltados: number) {
+  if (process.env.ESTRICTO !== "1" || saltados === 0) return fallas;
+  console.log(`\nESTRICTO=1: ${saltados} caso(s) se saltaron; cuentan como falla.`);
+  return fallas + saltados;
 }
 
 main()
