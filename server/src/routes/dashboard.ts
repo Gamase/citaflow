@@ -28,11 +28,12 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
       select: CITA_CORTA,
       orderBy: { fechaHora: "asc" },
     }),
-    // "Ahora" es un instante, no depende de la zona horaria: lo puede poner el server.
+    // Próximas: a partir de mañana (las de hoy ya salen en `hoy`). "Mañana" lo dice el front
+    // con su hora local: es el fin de su "hoy".
     req.db.appointment.findMany({
       where: {
         tenantId,
-        fechaHora: { gte: new Date() },
+        fechaHora: { gte: hoyHasta },
         estado: { in: ["PENDIENTE", "CONFIRMADA"] },
       },
       select: CITA_CORTA,

@@ -250,7 +250,7 @@ aislamiento() {
     const okProximas = r.proximas.length <= 5 && r.proximas.every((c, j, a) =>
       new Date(c.fechaHora).getTime() >= ahora && ["PENDIENTE", "CONFIRMADA"].includes(c.estado) &&
       (j === 0 || a[j - 1].fechaHora <= c.fechaHora));
-    linea(okProximas, nombre + ": próximas (futuras, activas, en orden)", r.proximas.length + " citas");
+    linea(okProximas, nombre + ": próximas (futuras, activas, en orden)", r.proximas.length + " citas (desde hoyHasta; el caso exacto va más abajo)");
   ' "$RESP" "$ESPERADO" "$2" "$1")
   echo "$salida"
   TOTAL=$((TOTAL + $(grep -c . <<< "$salida")))
@@ -308,6 +308,35 @@ cumple() {
     printf "❌ %-40s %s  %s\n" "$desc" "$detalle" "$(head -c 90 "$RESP")"
   fi
 }
+
+# Clientes en orden alfabético (con acentos: "Óscar" va con la O).
+for n in A B; do
+  t "clientes de $n en orden alfabético" 200 GET /clients "$([ $n = A ] && echo "$TA" || echo "$TB")"
+  cumple "  ordenados por nombre"     "r.length > 1 && r.every((c, i) => i === 0 || r[i - 1].nombre.localeCompare(c.nombre, 'es', { sensitivity: 'base' }) <= 0)"
+done
+
+# Resumen → "Próximas": las 5 citas activas siguientes a partir de mañana (las de hoy ya salen en
+# "Hoy"), calculadas de prisma/seed-data.ts con la hora local. Pide que el seed sea de hoy. Si
+# dos citas comparten hora, su orden no está definido: se comparan las horas en orden y que cada
+# cita esté entre las esperadas.
+DIA_HOY=$(node -p "const d=new Date(), h=new Date(d.getFullYear(),d.getMonth(),d.getDate()), m=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);
+  'hoyDesde='+h.toISOString()+'&hoyHasta='+m.toISOString()+'&mesDesde='+h.toISOString()+'&mesHasta='+m.toISOString()")
+PROX_ESP=$(npx --no-install tsx -e "
+  import { DATASETS, citasConFecha } from './prisma/seed-data';
+  const manana = new Date(); manana.setHours(24, 0, 0, 0);
+  console.log(JSON.stringify(DATASETS['$LABEL']!.tenants.slice(0, 2).map((t) => {
+    const activas = citasConFecha(t)
+      .filter((c) => ['PENDIENTE', 'CONFIRMADA'].includes(c.estado) && c.fechaHora >= manana)
+      .sort((x, y) => x.fechaHora.getTime() - y.fechaHora.getTime())
+      .map((c) => ({ fechaHora: c.fechaHora.toISOString(), cliente: t.clientes[c.cliente]!.nombre }));
+    return { horas: activas.slice(0, 5).map((c) => c.fechaHora), todas: activas.map((c) => c.fechaHora + ' ' + c.cliente) };
+  })));
+" 2>/dev/null)
+for i in 0 1; do
+  n=$([ $i = 0 ] && echo A || echo B)
+  t "resumen $n: próximas"           200 GET "/dashboard/resumen?$DIA_HOY" "$([ $i = 0 ] && echo "$TA" || echo "$TB")"
+  cumple "  las 5 siguientes desde mañana" "((e) => JSON.stringify(r.proximas.map((c) => c.fechaHora)) === JSON.stringify(e.horas) && r.proximas.every((c) => e.todas.includes(c.fechaHora + ' ' + c.client.nombre)))($(node -p "JSON.stringify(JSON.parse(process.argv[1])[$i])" "$PROX_ESP"))"
+done
 enc() { node -p 'encodeURIComponent(process.argv[1])' "$1"; }
 
 # Qué buscar y cuántos resultados esperar, calculado de prisma/seed-data.ts.
