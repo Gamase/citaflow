@@ -3,6 +3,7 @@ import api from "../api/client";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
+import { EsqueletoLista } from "../components/ui/Esqueleto";
 import { Field, Input } from "../components/ui/Field";
 import { PlusIcon, TagIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
@@ -124,7 +125,7 @@ export default function Services() {
       />
 
       {mostrarForm && (
-        <Card className="mb-6">
+        <Card className="mb-6 animate-aparecer">
           <form onSubmit={handleSubmit} className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-fg">Nuevo servicio</h2>
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem_9rem]">
@@ -180,7 +181,7 @@ export default function Services() {
 
       <Card>
         {cargando ? (
-          <p className="px-4 py-14 text-center text-sm text-muted">Cargando servicios…</p>
+          <EsqueletoLista etiqueta="Cargando servicios" avatar={false} />
         ) : errorCarga ? (
           <ErrorState message={errorCarga} onRetry={load} />
         ) : services.length === 0 ? (
@@ -210,7 +211,7 @@ export default function Services() {
               {services.map((s) =>
                 editId === s.id ? (
                   <Tr key={s.id} className="bg-teal-50/50 hover:bg-teal-50/50">
-                    <Td>
+                    <Td label="Nombre">
                       <Input
                         aria-label="Nombre"
                         className="h-9"
@@ -219,7 +220,7 @@ export default function Services() {
                         autoFocus
                       />
                     </Td>
-                    <Td align="right">
+                    <Td align="right" label="Duración (min)">
                       <Input
                         aria-label="Duración en minutos"
                         className="h-9 text-right"
@@ -228,7 +229,7 @@ export default function Services() {
                         onChange={(e) => setEditDuracion(e.target.value)}
                       />
                     </Td>
-                    <Td align="right">
+                    <Td align="right" label="Precio">
                       <Input
                         aria-label="Precio"
                         className="h-9 text-right"
@@ -250,11 +251,11 @@ export default function Services() {
                   </Tr>
                 ) : (
                   <Tr key={s.id}>
-                    <Td className="font-medium text-fg">{s.nombre}</Td>
-                    <Td align="right" className="text-muted tabular-nums">
+                    <Td className="font-medium text-fg max-md:pb-2 max-md:text-base">{s.nombre}</Td>
+                    <Td align="right" label="Duración" className="text-muted tabular-nums">
                       {s.duracionMin} min
                     </Td>
-                    <Td align="right" className="text-fg tabular-nums">
+                    <Td align="right" label="Precio" className="font-medium text-fg tabular-nums">
                       {formatPrecio(s.precio)}
                     </Td>
                     {dueno && (

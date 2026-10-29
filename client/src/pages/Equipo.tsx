@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
 import Badge from "../components/ui/Badge";
+import Avatar from "../components/ui/Avatar";
 import Button from "../components/ui/Button";
 import ErrorState from "../components/ui/ErrorState";
+import { EsqueletoLista } from "../components/ui/Esqueleto";
 import { Field, Input } from "../components/ui/Field";
 import { PlusIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
@@ -108,7 +110,7 @@ export default function Equipo() {
       />
 
       {mostrarForm && (
-        <Card className="mb-6">
+        <Card className="mb-6 animate-aparecer">
           <form onSubmit={handleSubmit} className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-fg">Nuevo empleado</h2>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -162,7 +164,7 @@ export default function Equipo() {
 
       <Card>
         {cargando ? (
-          <p className="px-4 py-14 text-center text-sm text-muted">Cargando equipo…</p>
+          <EsqueletoLista etiqueta="Cargando equipo" filas={3} />
         ) : errorCarga ? (
           <ErrorState message={errorCarga} onRetry={load} />
         ) : (
@@ -189,7 +191,7 @@ export default function Equipo() {
                 if (m?.tipo === "editar") {
                   return (
                     <Tr key={u.id} className="bg-teal-50/50 hover:bg-teal-50/50">
-                      <Td>
+                      <Td label="Nombre">
                         <Input
                           aria-label="Nombre"
                           className="h-9"
@@ -198,7 +200,7 @@ export default function Equipo() {
                           autoFocus
                         />
                       </Td>
-                      <Td>
+                      <Td label="Email">
                         <Input
                           aria-label="Email"
                           className="h-9"
@@ -207,10 +209,10 @@ export default function Equipo() {
                           onChange={(e) => setModo({ ...m, email: e.target.value })}
                         />
                       </Td>
-                      <Td>
+                      <Td label="Rol">
                         <Badge tone="neutral">Empleado</Badge>
                       </Td>
-                      <Td>
+                      <Td label="Acceso">
                         <Badge tone={u.activo ? "teal" : "danger"}>{u.activo ? "Activo" : "Inactivo"}</Badge>
                       </Td>
                       <Td align="right">
@@ -240,23 +242,30 @@ export default function Equipo() {
 
                 return (
                   <Tr key={u.id} className={u.activo ? "" : "text-faint"}>
-                    <Td className={`font-medium ${u.activo ? "text-fg" : "text-muted"}`}>
-                      {u.nombre}
-                      {soyYo && <span className="ml-1.5 text-xs font-normal text-muted">(tú)</span>}
+                    <Td className={`font-medium max-md:pb-2 max-md:text-base ${u.activo ? "text-fg" : "text-muted"}`}>
+                      <span className="inline-flex min-w-0 items-center gap-3">
+                        <Avatar nombre={u.nombre} />
+                        <span className="min-w-0 break-words">
+                          {u.nombre}
+                          {soyYo && <span className="ml-1.5 text-xs font-normal text-muted">(tú)</span>}
+                        </span>
+                      </span>
                     </Td>
-                    <Td className={u.activo ? "text-muted" : "text-faint"}>{u.email}</Td>
-                    <Td>
+                    <Td label="Email" className={u.activo ? "text-muted" : "text-faint"}>
+                      <span className="min-w-0 break-all">{u.email}</span>
+                    </Td>
+                    <Td label="Rol">
                       <Badge tone={u.rol === "DUENO" ? "ink" : "neutral"}>
                         {u.rol === "DUENO" ? "Dueño" : "Empleado"}
                       </Badge>
                     </Td>
-                    <Td>
+                    <Td label="Acceso">
                       <Badge tone={u.activo ? "teal" : "danger"}>{u.activo ? "Activo" : "Inactivo"}</Badge>
                     </Td>
-                    <Td align="right">
+                    <Td align="right" className={administrable ? "" : "max-md:hidden"}>
                       {!administrable ? null : m?.tipo === "password" ? (
                         <form
-                          className="flex flex-wrap items-center justify-end gap-2"
+                          className="flex animate-aparecer flex-wrap items-center justify-end gap-2"
                           onSubmit={(e) => {
                             e.preventDefault();
                             enFila(
@@ -270,7 +279,7 @@ export default function Equipo() {
                           <Input
                             aria-label="Contraseña temporal nueva (mínimo 8 caracteres)"
                             placeholder="Contraseña temporal nueva"
-                            className="h-9 w-56"
+                            className="h-9 w-56 max-md:w-full"
                             type="text"
                             autoComplete="new-password"
                             minLength={8}
@@ -287,8 +296,8 @@ export default function Equipo() {
                           </Button>
                         </form>
                       ) : m?.tipo === "activo" ? (
-                        <div className="flex items-center justify-end gap-3">
-                          <span className="text-sm text-fg">
+                        <div className="flex animate-aparecer flex-wrap items-center justify-end gap-3">
+                          <span className="text-sm whitespace-normal text-fg">
                             {!u.activo
                               ? "¿Devolverle el acceso?"
                               : u._count.citasQueAtiende > 0
@@ -315,7 +324,7 @@ export default function Equipo() {
                           </Button>
                         </div>
                       ) : (
-                        <div className="flex justify-end gap-4">
+                        <div className="flex flex-wrap justify-end gap-x-4 gap-y-2">
                           <Button
                             variant="link"
                             disabled={ocupado}

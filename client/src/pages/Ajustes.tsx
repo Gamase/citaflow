@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import api from "../api/client";
 import Button from "../components/ui/Button";
 import ErrorState from "../components/ui/ErrorState";
+import { EsqueletoLista } from "../components/ui/Esqueleto";
 import { Field, Input } from "../components/ui/Field";
 import PageHeader from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Table";
@@ -43,7 +44,7 @@ export default function Ajustes() {
 
       {cargando ? (
         <Card>
-          <p className="px-4 py-14 text-center text-sm text-muted">Cargando ajustes…</p>
+          <EsqueletoLista etiqueta="Cargando ajustes" filas={4} avatar={false} />
         </Card>
       ) : errorCarga || !cuenta ? (
         <Card>
