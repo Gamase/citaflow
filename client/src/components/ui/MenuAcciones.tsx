@@ -108,7 +108,8 @@ export default function MenuAcciones({ etiqueta, items }: { etiqueta: string; it
           onKeyDown={onKeyDown}
           // Primero se dibuja invisible para medirlo; luego se coloca.
           style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden", top: 0, left: 0 }}
-          className="fixed z-50 min-w-44 rounded-lg border border-line bg-surface py-1 text-left shadow-pop"
+          // La entrada empieza ya colocado (no mientras se mide invisible).
+          className={`fixed z-50 min-w-44 rounded-lg border border-line bg-surface py-1 text-left shadow-pop ${pos ? "animate-aparecer" : ""}`}
         >
           {items.map((item) => (
             <button

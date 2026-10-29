@@ -34,6 +34,8 @@ router.get("/", validar(busquedaClientesSchema, "query"), async (req, res) => {
         ],
       }),
     },
+    // Alfabético (con la collation de la BD). Sin orden, Postgres los regresa como caigan.
+    orderBy: { nombre: "asc" },
   });
   res.json(clients);
 });

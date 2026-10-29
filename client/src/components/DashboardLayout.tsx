@@ -193,7 +193,7 @@ export default function DashboardLayout() {
       <main className="min-w-0 flex-1 lg:pl-64">
         {sinVerificar && (
           <div role="status" className="border-b border-amber-500/30 bg-amber-50 px-4 py-3 sm:px-8">
-            <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 text-sm text-amber-800">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 text-sm text-amber-800">
               <p className="min-w-0 flex-1">
                 <span className="font-semibold">Verifica tu correo.</span> Te mandamos un enlace a{" "}
                 <span className="font-medium break-all">{session?.user.email}</span>. Mientras tanto puedes usar
@@ -205,7 +205,7 @@ export default function DashboardLayout() {
             </div>
           </div>
         )}
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-10 xl:px-12">
           <Outlet context={contexto} />
         </div>
       </main>

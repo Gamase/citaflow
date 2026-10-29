@@ -5,6 +5,7 @@ import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
+import { EsqueletoLista } from "../components/ui/Esqueleto";
 import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
@@ -79,7 +80,7 @@ export default function HistorialCliente() {
 
       {cargando ? (
         <Card>
-          <p className="px-4 py-14 text-center text-sm text-muted">Cargando historial…</p>
+          <EsqueletoLista etiqueta="Cargando historial" filas={4} avatar={false} />
         </Card>
       ) : errorCarga || !historial ? (
         <Card>

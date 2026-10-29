@@ -13,7 +13,8 @@ export function formatTelefono(tel: string) {
 }
 
 const fecha = new Intl.DateTimeFormat("es-MX", { weekday: "short", day: "numeric", month: "short" });
-const hora = new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" });
+// Sin cero inicial ("9:00 a.m."), igual que los chips de hora al agendar.
+const hora = new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" });
 
 export function formatFecha(iso: string) {
   return fecha.format(new Date(iso));
@@ -28,4 +29,9 @@ export function formatDatetimeLocal(iso: string) {
   const d = new Date(iso);
   const dos = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}T${dos(d.getHours())}:${dos(d.getMinutes())}`;
+}
+
+/** Hoy en hora local como "2026-10-29" (el formato de <input type="date">). */
+export function hoyLocal() {
+  return formatDatetimeLocal(new Date().toISOString()).slice(0, 10);
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/client";
+import Avatar from "../components/ui/Avatar";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
+import { EsqueletoLista } from "../components/ui/Esqueleto";
 import { Field, Input } from "../components/ui/Field";
 import { PlusIcon, UsersIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
@@ -149,7 +151,7 @@ export default function Clients() {
       />
 
       {mostrarForm && (
-        <Card className="mb-6">
+        <Card className="mb-6 animate-aparecer">
           <form onSubmit={handleSubmit} className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-fg">Nuevo cliente</h2>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -214,7 +216,7 @@ export default function Clients() {
           />
         </div>
         {cargando ? (
-          <p className="px-4 py-14 text-center text-sm text-muted">Cargando clientes…</p>
+          <EsqueletoLista etiqueta="Cargando clientes" />
         ) : errorCarga ? (
           <ErrorState message={errorCarga} onRetry={load} />
         ) : clients.length === 0 && termino ? (
@@ -247,7 +249,7 @@ export default function Clients() {
               {clients.map((c) =>
                 editId === c.id ? (
                   <Tr key={c.id} className="bg-teal-50/50 hover:bg-teal-50/50">
-                    <Td>
+                    <Td label="Nombre">
                       <Input
                         aria-label="Nombre"
                         className="h-9"
@@ -256,7 +258,7 @@ export default function Clients() {
                         autoFocus
                       />
                     </Td>
-                    <Td>
+                    <Td label="Teléfono">
                       <Input
                         aria-label="Teléfono (10 dígitos)"
                         className="h-9 tabular-nums"
@@ -266,7 +268,7 @@ export default function Clients() {
                         onChange={(e) => setEditTelefono(e.target.value)}
                       />
                     </Td>
-                    <Td>
+                    <Td label="Email">
                       <Input
                         aria-label="Email (opcional)"
                         className="h-9"
@@ -288,13 +290,21 @@ export default function Clients() {
                   </Tr>
                 ) : (
                   <Tr key={c.id}>
-                    <Td className="font-medium text-fg">
-                      <Link to={`/dashboard/clients/${c.id}`} className="hover:text-teal-700 hover:underline">
-                        {c.nombre}
+                    <Td className="font-medium text-fg max-md:pb-2">
+                      <Link
+                        to={`/dashboard/clients/${c.id}`}
+                        className="inline-flex min-w-0 items-center gap-3 hover:text-teal-700 hover:underline max-md:text-base"
+                      >
+                        <Avatar nombre={c.nombre} />
+                        <span className="min-w-0 break-words">{c.nombre}</span>
                       </Link>
                     </Td>
-                    <Td className="text-muted tabular-nums">{formatTelefono(c.telefono)}</Td>
-                    <Td className="text-muted">{c.email ?? <span className="text-faint">—</span>}</Td>
+                    <Td label="Teléfono" className="text-muted tabular-nums">
+                      {formatTelefono(c.telefono)}
+                    </Td>
+                    <Td label="Email" className="text-muted">
+                      {c.email ? <span className="min-w-0 break-all">{c.email}</span> : <span className="text-faint">—</span>}
+                    </Td>
                     <Td align="right">
                       <div className="flex justify-end gap-4">
                         <Button variant="link" onClick={() => startEdit(c)}>
