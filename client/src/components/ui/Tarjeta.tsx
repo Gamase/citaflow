@@ -22,9 +22,11 @@ interface TarjetaProps {
   to?: string;
   // Para el enlace: qué pasa al abrirlo (p. ej. "Ver las citas de hoy").
   ariaLabel?: string;
+  // El valor es un texto (una fecha), no un número: va más chico para que quepa en un renglón.
+  texto?: boolean;
 }
 
-export default function Tarjeta({ titulo, valor, detalle, icono, tono = "teal", to, ariaLabel }: TarjetaProps) {
+export default function Tarjeta({ titulo, valor, detalle, icono, tono = "teal", to, ariaLabel, texto }: TarjetaProps) {
   const contenido = (
     <>
       <div className="flex items-start justify-between gap-3">
@@ -38,7 +40,11 @@ export default function Tarjeta({ titulo, valor, detalle, icono, tono = "teal", 
           </span>
         )}
       </div>
-      <p className="mt-1 text-2xl font-semibold tracking-tight text-fg tabular-nums break-words sm:text-3xl xl:text-4xl">
+      <p
+        className={`mt-1 font-semibold tracking-tight text-fg tabular-nums break-words ${
+          texto ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl xl:text-4xl"
+        }`}
+      >
         {valor}
       </p>
       <p className="mt-1.5 text-xs text-muted sm:text-sm">{detalle}</p>
