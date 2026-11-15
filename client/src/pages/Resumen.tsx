@@ -23,6 +23,8 @@ interface CitaCorta {
 
 interface Resumen {
   hoy: CitaCorta[];
+  // true para el empleado: `hoy` trae solo las citas que él atiende (el dueño ve todas).
+  hoySoloMias: boolean;
   proximas: CitaCorta[];
   mes: {
     porEstado: Record<Estado, number>;
@@ -50,9 +52,9 @@ const BARRA: Record<string, string> = {
 
 const nombreMes = new Intl.DateTimeFormat("es-MX", { month: "long" });
 
-// Citas con un filtro ya puesto (Citas lee `rango` y `estado` de la URL).
-function enCitas(rango: "hoy" | "mes", estado?: Estado) {
-  return `/dashboard/appointments?rango=${rango}${estado ? `&estado=${estado}` : ""}`;
+// Citas con un filtro ya puesto (Citas lee `rango`, `estado` y `mias` de la URL).
+function enCitas(rango: "hoy" | "mes", estado?: Estado, mias = false) {
+  return `/dashboard/appointments?rango=${rango}${estado ? `&estado=${estado}` : ""}${mias ? "&mias=1" : ""}`;
 }
 
 function saludo() {
@@ -97,6 +99,8 @@ export default function ResumenPage() {
   useEffect(load, []);
 
   const mes = nombreMes.format(new Date());
+  // Al empleado el backend le manda en `hoy` solo sus citas: los títulos y enlaces lo dicen.
+  const soloMias = resumen?.hoySoloMias ?? false;
 
   return (
     <>
@@ -117,15 +121,17 @@ export default function ResumenPage() {
             className={`grid grid-cols-2 gap-3 sm:gap-4 ${resumen.mes.ingresos === null ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}
           >
             <Tarjeta
-              titulo="Citas de hoy"
+              titulo={soloMias ? "Mis citas de hoy" : "Citas de hoy"}
               icono={<CalendarIcon className="size-5" />}
               tono="teal"
-              to={enCitas("hoy")}
-              ariaLabel="Ver las citas de hoy."
+              to={enCitas("hoy", undefined, soloMias)}
+              ariaLabel={soloMias ? "Ver mis citas de hoy." : "Ver las citas de hoy."}
               valor={String(resumen.hoy.length)}
               detalle={
                 resumen.hoy.length === 0
-                  ? "Nada agendado para hoy"
+                  ? soloMias
+                    ? "No tienes citas hoy"
+                    : "Nada agendado para hoy"
                   : `${resumen.hoy.filter((c) => c.estado === "PENDIENTE").length} por confirmar`
               }
             />
@@ -228,10 +234,17 @@ export default function ResumenPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <ListaCitas
-              titulo="Hoy"
+              titulo={soloMias ? "Mis citas de hoy" : "Hoy"}
               citas={resumen.hoy}
-              vacio="No hay citas para hoy."
+              vacio={soloMias ? "No tienes citas para hoy." : "No hay citas para hoy."}
               conFecha={false}
+              pie={
+                soloMias && (
+                  <Link to={enCitas("hoy")} className="font-medium text-teal-700 hover:underline">
+                    Ver todas las citas de hoy del negocio
+                  </Link>
+                )
+              }
             />
             <ListaCitas
               titulo="Próximas citas"
@@ -251,11 +264,14 @@ function ListaCitas({
   citas,
   vacio,
   conFecha,
+  pie,
 }: {
   titulo: string;
   citas: CitaCorta[];
   vacio: string;
   conFecha: boolean;
+  // Renglón al final de la tarjeta (p. ej. el enlace a todas las citas del negocio).
+  pie?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -293,6 +309,7 @@ function ListaCitas({
           })}
         </ul>
       )}
+      {pie && <div className="border-t border-line px-5 py-3 text-sm">{pie}</div>}
     </Card>
   );
 }

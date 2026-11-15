@@ -21,10 +21,17 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
   const { hoyDesde, hoyHasta, mesDesde, mesHasta } = res.locals.query as ResumenInput;
   const tenantId = req.tenantId as string;
   const delMes = { tenantId, fechaHora: { gte: mesDesde, lt: mesHasta } };
+  // "Hoy" del empleado: solo las citas que él atiende; el dueño ve las de todo el negocio.
+  // No es un permiso (el empleado puede ver todas en Citas): es lo que a él le toca hoy.
+  const hoySoloMias = req.rol === "EMPLEADO";
 
   const [hoy, proximas, porEstadoRaw, completadas, clientes, servicios, masPedidosRaw] = await Promise.all([
     req.db.appointment.findMany({
-      where: { tenantId, fechaHora: { gte: hoyDesde, lt: hoyHasta } },
+      where: {
+        tenantId,
+        fechaHora: { gte: hoyDesde, lt: hoyHasta },
+        ...(hoySoloMias && { atiendeId: req.userId as string }),
+      },
       select: CITA_CORTA,
       orderBy: { fechaHora: "asc" },
     }),
@@ -87,6 +94,8 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
 
   res.json({
     hoy,
+    // Para que el front titule "Mis citas de hoy" según lo que de verdad se le mandó.
+    hoySoloMias,
     proximas,
     mes: {
       porEstado,
