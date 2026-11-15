@@ -93,11 +93,11 @@ router.get("/:id/historial", validar(idParamSchema, "params"), async (req, res) 
 });
 
 router.post("/", validar(clienteSchema), async (req, res) => {
-  const { nombre, telefono, email } = req.body as ClienteInput;
+  const { nombre, telefono, email, notas } = req.body as ClienteInput;
 
   try {
     const client = await req.db.client.create({
-      data: { nombre, telefono, email, tenantId: req.tenantId as string },
+      data: { nombre, telefono, email, notas: notas || null, tenantId: req.tenantId as string },
     });
     res.status(201).json(client);
   } catch (err) {
@@ -108,9 +108,9 @@ router.post("/", validar(clienteSchema), async (req, res) => {
   }
 });
 
-// Campos opcionales: solo se valida y actualiza lo que venga.
+// Campos opcionales: solo se valida y actualiza lo que venga. Notas vacías = sin notas (null).
 router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
-  const { nombre, telefono, email } = req.body as EditarClienteInput;
+  const { nombre, telefono, email, notas } = req.body as EditarClienteInput;
 
   const client = await req.db.client.findFirst({
     where: { id: req.params.id, tenantId: req.tenantId as string },
@@ -123,7 +123,7 @@ router.patch("/:id", validar(editarClienteSchema), async (req, res) => {
   try {
     const actualizado = await req.db.client.update({
       where: { id: client.id, tenantId: req.tenantId as string },
-      data: { nombre, telefono, email },
+      data: { nombre, telefono, email, notas: notas === "" ? null : notas },
     });
     res.json(actualizado);
   } catch (err) {

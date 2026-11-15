@@ -164,6 +164,12 @@ export const editarServicioSchema = servicioSchema
 
 // --- Clients ---
 
+// Notas libres del negocio sobre el cliente. La ruta guarda "" como null (sin notas).
+const notas = z
+  .string({ error: "Las notas no son válidas" })
+  .trim()
+  .max(2000, "Las notas no pueden pasar de 2000 caracteres");
+
 export const clienteSchema = z.object({
   nombre: texto("El nombre del cliente"),
   telefono: z
@@ -171,11 +177,12 @@ export const clienteSchema = z.object({
     .trim()
     .regex(/^\d{10}$/, "El teléfono debe tener 10 dígitos"),
   email: email.optional(),
+  notas: notas.optional(),
 });
 
-// Al editar, `email: null` borra el email que tenía.
+// Al editar, `email: null` o `notas: null` borran lo que había.
 export const editarClienteSchema = clienteSchema
-  .extend({ email: email.nullable() })
+  .extend({ email: email.nullable(), notas: notas.nullable() })
   .partial()
   .refine((datos) => Object.keys(datos).length > 0, "No hay cambios que guardar");
 

@@ -305,6 +305,27 @@ t "PATCH teléfono de 9 dígitos"    400 PATCH "/clients/$CLI_TMP" "$TA" '{"tele
 t "PATCH teléfono de otro cliente" 409 PATCH "/clients/$CLI_TMP" "$TA" "{\"telefono\":\"$TEL_A\"}"
 t "PATCH cliente válido"           200 PATCH "/clients/$CLI_TMP" "$TA" '{"nombre":"Prueba editada","email":"prueba@ejemplo.com"}'
 t "PATCH quitar email (null)"      200 PATCH "/clients/$CLI_TMP" "$TA" '{"email":null}'
+# Notas del cliente: texto libre, se guardan sin espacios de sobra; vacías o null = sin notas.
+t "PATCH notas del cliente"        200 PATCH "/clients/$CLI_TMP" "$TA" '{"notas":"  Prefiere citas por la tarde  "}'
+cumple "  guardadas sin espacios"    "r.notas === 'Prefiere citas por la tarde'"
+t "PATCH notas de 2001 caracteres" 400 PATCH "/clients/$CLI_TMP" "$TA" "{\"notas\":\"$(head -c 2001 /dev/zero | tr '\0' a)\"}"
+t "PATCH notas vacías"             200 PATCH "/clients/$CLI_TMP" "$TA" '{"notas":"   "}'
+cumple "  quedan en null"            "r.notas === null"
+t "PATCH notas null"               200 PATCH "/clients/$CLI_TMP" "$TA" '{"notas":"otra vez"}'
+t "  y quitarlas con null"         200 PATCH "/clients/$CLI_TMP" "$TA" '{"notas":null}'
+cumple "  sin notas"                 "r.notas === null"
+# Un cliente del seed trae notas (prisma/seed-data.ts): llegan tal cual en la lista.
+NOTAS_SEED=$(npx --no-install tsx -e "
+  import { DATASETS } from './prisma/seed-data';
+  const c = DATASETS['$LABEL']!.tenants[0]!.clientes.find((c) => c.notas);
+  console.log(JSON.stringify(c ? { telefono: c.telefono, notas: c.notas } : { telefono: '', notas: '' }));
+" 2>/dev/null)
+if [ -n "$(campo - notas <<< "$NOTAS_SEED")" ]; then
+  t "clientes: el que trae notas en el seed" 200 GET "/clients?q=$(campo - telefono <<< "$NOTAS_SEED")" "$TA"
+  cumple "  con sus notas"             "r.length === 1 && r[0].notas === $(node -p 'JSON.stringify(JSON.parse(process.argv[1]).notas)' "$NOTAS_SEED")"
+else
+  saltar "Se salta: ningún cliente del seed $LABEL trae notas."
+fi
 t "DELETE cliente de otro negocio" 404 DELETE "/clients/$CLI_B" "$TA"
 t "DELETE cliente sin citas"       204 DELETE "/clients/$CLI_TMP" "$TA"
 
@@ -442,6 +463,7 @@ while read -r cand; do
 done <<< "$CANDIDATOS"
 echo "   (cliente: $(campo - nombre <<< "$ESP_H"), $(campo - total <<< "$ESP_H") citas en el seed)"
 t "historial de un cliente"        200 GET "/clients/$CLI_H/historial" "$TA"
+cumple "  el historial trae las notas" "'notas' in r.cliente"
 cumple "  conteos = los del seed"    "((e) => r.cliente.id === '$CLI_H' && r.resumen.total === e.total && r.citas.length === e.total && ['PENDIENTE','CONFIRMADA','COMPLETADA','NO_ASISTIO','CANCELADA'].every((s) => r.resumen.porEstado[s] === (e.porEstado[s] ?? 0)))($ESP_H)"
 cumple "  total gastado = atendidas" "Math.abs(r.resumen.totalGastado - $(campo - gastado <<< "$ESP_H")) < 0.005"
 cumple "  de la más reciente a la más vieja" "r.citas.every((c, i, a) => i === 0 || a[i - 1].fechaHora >= c.fechaHora)"
@@ -496,6 +518,8 @@ t "empleado: borrar servicio"      403 DELETE "/services/$SRV_A" "$TE"
 t "empleado: crear cliente"        201 POST /clients "$TE" "{\"nombre\":\"Prueba de empleado\",\"telefono\":\"$TEL\"}"
 CLI_E=$(campo "$RESP" id)
 t "empleado: editar cliente"       200 PATCH "/clients/$CLI_E" "$TE" '{"nombre":"Prueba de empleado (editado)"}'
+t "empleado: notas del cliente"    200 PATCH "/clients/$CLI_E" "$TE" '{"notas":"Nota del empleado"}'
+cumple "  las guarda igual que el dueño" "r.notas === 'Nota del empleado'"
 t "empleado: borrar cliente"       403 DELETE "/clients/$CLI_E" "$TE"
 t "dueño borra ese cliente"        204 DELETE "/clients/$CLI_E" "$TA"
 t "empleado: ver equipo"           403 GET /users "$TE"
