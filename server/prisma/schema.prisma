@@ -18,12 +18,32 @@ enum EstadoCita {
 model Tenant {
   id       String   @id @default(uuid())
   nombre   String
+  // Zona horaria (IANA) en la que se interpreta el horario de apertura. Por ahora todos los
+  // negocios nacen en Tijuana y no hay UI para cambiarla.
+  zonaHoraria String @default("America/Tijuana")
   creadoEn DateTime @default(now())
 
   users        User[]
   services     Service[]
   clients      Client[]
   appointments Appointment[]
+  horario      HorarioDia[]
+}
+
+// Horario de apertura: un renglón por día de la semana (0 = domingo … 6 = sábado), en minutos
+// desde medianoche en la zona del negocio. Un día sin renglón está cerrado. Un negocio SIN
+// ningún renglón no restringe horarios (los negocios de antes siguen igual hasta que el dueño lo
+// configure). Un solo tramo por día (sin hora de comida). Con RLS como las demás tablas de negocio.
+model HorarioDia {
+  id        String @id @default(uuid())
+  diaSemana Int
+  abreMin   Int
+  cierraMin Int
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, diaSemana])
 }
 
 // Sin default a propósito: quien crea un usuario dice qué rol tiene

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { EstadoCita, Prisma } from "@prisma/client";
 import type { ClienteTenant } from "../db";
+import { fueraDeHorario } from "../horario";
 import { verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import {
@@ -172,6 +173,12 @@ router.post("/", validar(citaSchema), async (req, res) => {
     return res.status(persona.status).json({ error: persona.error });
   }
 
+  // Dentro del horario de apertura (si el negocio lo configuró): empieza y termina abierto.
+  const motivoHorario = await fueraDeHorario(req.db, req.tenantId as string, fechaHora, service.duracionMin);
+  if (motivoHorario) {
+    return res.status(400).json({ error: motivoHorario });
+  }
+
   if (await hayChoque(req.db, req.tenantId as string, fechaHora, service.duracionMin, atiendeId)) {
     return res.status(409).json({ error: mensajeChoque(persona.nombre) });
   }
@@ -214,6 +221,16 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
     return res
       .status(409)
       .json({ error: `La cita está marcada como "${NOMBRE_ESTADO[actual]}" y ya no se puede reagendar` });
+  }
+
+  const motivoHorario = await fueraDeHorario(
+    req.db,
+    req.tenantId as string,
+    fechaHora,
+    appointment.service.duracionMin,
+  );
+  if (motivoHorario) {
+    return res.status(400).json({ error: motivoHorario });
   }
 
   // Se revisa en la agenda de quien la atiende. El precio no cambia al reagendar.

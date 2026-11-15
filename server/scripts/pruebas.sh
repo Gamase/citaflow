@@ -111,8 +111,24 @@ SRV_A=$(primero services "$TA" id)
 PRECIO_A=$(primero services "$TA" precio)
 CLI_B=$(primero clients "$TB" id)
 UUID0=00000000-0000-4000-8000-000000000000
-FUT=$(node -p 'const d=new Date(Date.now()+40*864e5); d.setUTCHours(3,11,0,0); d.toISOString()')
-FUT2=$(node -p "new Date(new Date('$FUT').getTime() + 2*3600e3).toISOString()")
+# Fechas de las citas que crea este script: ~40 días adelante (fuera de las del seed y del
+# rango del Resumen) y DENTRO del horario de apertura del negocio A, que sale de
+# prisma/seed-data.ts. Nada depende de "hoy" ni de horas fijas: pasan cualquier día y a
+# cualquier hora. FUT es el primer día abierto a partir de +40 días, a la hora de apertura;
+# las demás son desplazamientos dentro de ese mismo día (el seed abre al menos 10 h).
+eval "$(npx --no-install tsx -e "
+  import { DATASETS, aMinutos, fechaTijuana } from './prisma/seed-data';
+  import { enZona } from './src/horario';
+  const a = DATASETS['$LABEL']!.tenants[0]!;
+  const tramo = (d: number) => a.horario.find((h) => h.dia === enZona(fechaTijuana(d, 12), 'America/Tijuana').diaSemana);
+  let dias = 40;
+  while (!tramo(dias)) dias++;
+  const abre = aMinutos(tramo(dias)!.abre), cierra = aMinutos(tramo(dias)!.cierra);
+  if (abre < 30 || abre + 600 > cierra) throw new Error('El horario del seed debe abrir después de las 0:30 y al menos 10 h');
+  const en = (min: number) => fechaTijuana(dias, Math.floor(min / 60), min % 60).toISOString();
+  console.log('FUT=' + en(abre), 'FUT2=' + en(abre + 120), 'FUT3=' + en(abre + 240), 'FUT_P=' + en(abre + 360), 'FUT_Q=' + en(abre + 480), 'DIA_FUT=' + dias, 'ABRE_FUT=' + abre);
+" 2>/dev/null)"
+[ -n "${FUT:-}" ] || { echo "No se pudieron calcular las fechas de prueba desde prisma/seed-data.ts" >&2; exit 1; }
 TEL="55$(printf %08d $((RANDOM * 1000 + RANDOM % 1000)))"
 
 echo "API: $API  |  entorno: $LABEL  |  A: $A_EMAIL  |  B: $B_EMAIL"
@@ -468,7 +484,7 @@ cumple "  login devuelve rol EMPLEADO" "r.user.rol === 'EMPLEADO'"
 TE=$(campo "$RESP" token)
 t "login dueño"                    200 POST /auth/login "" "{\"email\":\"$A_EMAIL\",\"password\":\"$A_PASS\"}"
 cumple "  login devuelve rol DUENO"  "r.user.rol === 'DUENO' && r.user.verificado === true"
-FUT3=$(node -p "new Date(new Date('$FUT').getTime() + 4*3600e3).toISOString()")
+# FUT3 (= FUT + 4 h) viene de arriba, dentro del horario del negocio.
 t "empleado: crear cita"           201 POST /appointments "$TE" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT3\"}"
 CITA3=$(campo "$RESP" id)
 t "empleado: reagendar su cita"    200 PATCH "/appointments/$CITA3" "$TE" "{\"fechaHora\":\"$FUT3\"}"
@@ -596,8 +612,7 @@ t "personas (no se lee como :id)"  200 GET /appointments/personas "$TA"
 cumple "  activas de A, sin email"   "r.some((p) => p.id === '$YO_A') && r.some((p) => p.id === '$EMP_A') && !r.some((p) => p.id === '$EMP_B') && r.every((p) => !('email' in p))"
 t "personas: el empleado también"  200 GET /appointments/personas "$TE"
 
-# Horarios propios de esta sección, ~40 días adelante (después de los de arriba).
-read -r FUT_P FUT_Q <<< "$(node -p "const b = new Date('$FUT').getTime(); new Date(b + 8*3600e3).toISOString() + ' ' + new Date(b + 10*3600e3).toISOString()")"
+# Horarios propios de esta sección: FUT_P y FUT_Q (= FUT + 6 h y + 8 h) vienen de arriba.
 t "cita: guarda el precio"         201 POST /appointments "$TA" "{\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\",\"fechaHora\":\"$FUT_P\"}"
 cumple "  = precio del servicio, sin asignar" "Number(r.precio) === Number('$PRECIO_A') && r.atiendeId === null"
 CITA_P=$(campo "$RESP" id)
@@ -637,6 +652,67 @@ t "filtro atiende inválido"        400 GET "/appointments?atiende=otro" "$TA"
 t "cancelar la del dueño"          200 PATCH "/appointments/$C_DUENO/estado" "$TA" '{"estado":"CANCELADA"}'
 t "reasignar una cita cancelada"   409 PATCH "/appointments/$C_DUENO/atiende" "$TA" "{\"atiendeId\":\"$EMP_A\"}"
 for c in "$C_EMP" "$C_SIN" "$CITA_P"; do
+  t "cancelar cita de esta sección" 200 PATCH "/appointments/$c/estado" "$TA" '{"estado":"CANCELADA"}'
+done
+
+echo "== Horario del negocio"
+# El horario del seed (A y B) en el formato del PUT, y el de A con un día cerrado: el día
+# siguiente al de FUT. Todo sale de prisma/seed-data.ts; nada depende de "hoy".
+read -r DIAS_A DIAS_B DIAS_A_CERRADO <<< "$(npx --no-install tsx -e "
+  import { DATASETS, aMinutos, fechaTijuana } from './prisma/seed-data';
+  import { enZona } from './src/horario';
+  const [a, b] = DATASETS['$LABEL']!.tenants;
+  const dias = (t: typeof a) => t!.horario.map((h) => ({ diaSemana: h.dia, abreMin: aMinutos(h.abre), cierraMin: aMinutos(h.cierra) }));
+  const cerrado = enZona(fechaTijuana($DIA_FUT + 1, 12), 'America/Tijuana').diaSemana;
+  console.log(JSON.stringify(dias(a)), JSON.stringify(dias(b)), JSON.stringify(dias(a).filter((d) => d.diaSemana !== cerrado)));
+" 2>/dev/null)"
+# Horas de prueba: antes de abrir el día de FUT; en el siguiente día abierto después de FUT + 1,
+# una cita que termina justo al cierre (vale) y otra que se pasa 15 min (no); y FUT + 1 (el día
+# que el PUT de abajo cierra) a una hora que estaría abierta.
+DUR_A=$(primero services "$TA" duracionMin)
+read -r H_ANTES H_JUSTO H_PASADA H_DIA_CERRADO <<< "$(npx --no-install tsx -e "
+  import { DATASETS, aMinutos, fechaTijuana } from './prisma/seed-data';
+  import { enZona } from './src/horario';
+  const a = DATASETS['$LABEL']!.tenants[0]!;
+  const tramo = (d: number) => a.horario.find((h) => h.dia === enZona(fechaTijuana(d, 12), 'America/Tijuana').diaSemana);
+  const en = (d: number, min: number) => fechaTijuana(d, Math.floor(min / 60), min % 60).toISOString();
+  let d2 = $DIA_FUT + 2;
+  while (!tramo(d2)) d2++;
+  const cierra2 = aMinutos(tramo(d2)!.cierra);
+  console.log(en($DIA_FUT, $ABRE_FUT - 30), en(d2, cierra2 - $DUR_A), en(d2, cierra2 - $DUR_A + 15), en($DIA_FUT + 1, $ABRE_FUT + 60));
+" 2>/dev/null)"
+# Compara horarios sin depender del orden de las llaves del JSON.
+NORM='(d) => JSON.stringify(d.map((x) => [x.diaSemana, x.abreMin, x.cierraMin]))'
+CITA_H="\"clientId\":\"$CLI_A\",\"serviceId\":\"$SRV_A\""
+t "horario: GET dueño"             200 GET /tenant/horario "$TA"
+cumple "  el del seed, en Tijuana"   "($NORM)(r.dias) === ($NORM)($DIAS_A) && r.zonaHoraria === 'America/Tijuana'"
+t "horario: GET empleado"          200 GET /tenant/horario "$TE"
+t "horario: PUT empleado"          403 PUT /tenant/horario "$TE" "{\"dias\":$DIAS_A_CERRADO}"
+t "horario: PUT sin body"          400 PUT /tenant/horario "$TA"
+t "horario: cierra antes de abrir" 400 PUT /tenant/horario "$TA" '{"dias":[{"diaSemana":1,"abreMin":600,"cierraMin":540}]}'
+t "horario: día 7"                 400 PUT /tenant/horario "$TA" '{"dias":[{"diaSemana":7,"abreMin":540,"cierraMin":1080}]}'
+t "horario: 9:15 (no es de 30 en 30)" 400 PUT /tenant/horario "$TA" '{"dias":[{"diaSemana":1,"abreMin":555,"cierraMin":1080}]}'
+t "horario: día repetido"          400 PUT /tenant/horario "$TA" '{"dias":[{"diaSemana":1,"abreMin":540,"cierraMin":1080},{"diaSemana":1,"abreMin":600,"cierraMin":1200}]}'
+t "cita antes de abrir"            400 POST /appointments "$TA" "{$CITA_H,\"fechaHora\":\"$H_ANTES\"}"
+t "cita que termina justo al cierre" 201 POST /appointments "$TA" "{$CITA_H,\"fechaHora\":\"$H_JUSTO\"}"
+C_JUSTO=$(campo "$RESP" id)
+t "cita que se pasa del cierre"    400 POST /appointments "$TA" "{$CITA_H,\"fechaHora\":\"$H_PASADA\"}"
+t "cita en un día aún abierto"     201 POST /appointments "$TA" "{$CITA_H,\"fechaHora\":\"$H_DIA_CERRADO\"}"
+t "  cancelarla"                   200 PATCH "/appointments/$(campo "$RESP" id)/estado" "$TA" '{"estado":"CANCELADA"}'
+t "cerrar ese día (PUT dueño)"     200 PUT /tenant/horario "$TA" "{\"dias\":$DIAS_A_CERRADO}"
+cumple "  queda sin ese día"         "($NORM)(r.dias) === ($NORM)($DIAS_A_CERRADO)"
+t "cita en el día cerrado"         400 POST /appointments "$TA" "{$CITA_H,\"fechaHora\":\"$H_DIA_CERRADO\"}"
+t "reagendar al día cerrado"       400 PATCH "/appointments/$C_JUSTO" "$TA" "{\"fechaHora\":\"$H_DIA_CERRADO\"}"
+t "reagendar antes de abrir"       400 PATCH "/appointments/$C_JUSTO" "$TA" "{\"fechaHora\":\"$H_ANTES\"}"
+t "aislamiento: horario de B"      200 GET /tenant/horario "$TB"
+cumple "  sigue siendo el del seed"  "($NORM)(r.dias) === ($NORM)($DIAS_B)"
+t "quitar todo el horario"         200 PUT /tenant/horario "$TA" '{"dias":[]}'
+cumple "  sin días"                  "Array.isArray(r.dias) && r.dias.length === 0"
+t "sin horario: cualquier hora vale" 201 POST /appointments "$TA" "{$CITA_H,\"fechaHora\":\"$H_ANTES\"}"
+C_LIBRE=$(campo "$RESP" id)
+t "restaurar el horario del seed"  200 PUT /tenant/horario "$TA" "{\"dias\":$DIAS_A}"
+cumple "  como el seed"              "($NORM)(r.dias) === ($NORM)($DIAS_A)"
+for c in "$C_JUSTO" "$C_LIBRE"; do
   t "cancelar cita de esta sección" 200 PATCH "/appointments/$c/estado" "$TA" '{"estado":"CANCELADA"}'
 done
 

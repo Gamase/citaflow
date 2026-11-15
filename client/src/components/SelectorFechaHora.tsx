@@ -1,35 +1,52 @@
 import { useId, useRef } from "react";
 import { hoyLocal } from "../lib/format";
+import { etiquetaMinutos, type HorarioDia } from "../lib/horario";
 import { Input } from "./ui/Field";
 
 // Fecha + hora para agendar y reagendar, en lugar del datetime-local nativo (que sale en el
 // idioma del navegador). El valor es el mismo texto que daba el datetime-local,
 // "2026-10-30T13:30" en hora local, así que lo que se manda a la API no cambia.
 //
-// Horario fijo de 8:00 a 20:00 cada 30 min (horario por negocio: mejora futura). Si la fecha es
-// hoy, las horas que ya pasaron se deshabilitan. Si la cita a reagendar está a una hora fuera
-// de los chips (p. ej. 11:20), esa hora aparece como un chip más, marcado "actual".
+// Las horas salen del horario de apertura del negocio para el día elegido: de la apertura a la
+// última hora en que el servicio todavía termina antes del cierre. Un día cerrado no ofrece
+// horas. Sin horario configurado, de 8:00 a 20:00. Si la fecha es hoy, las horas que ya pasaron
+// se deshabilitan. Si la cita a reagendar está a una hora fuera de los chips (p. ej. 11:20), esa
+// hora aparece como un chip más, marcado "actual".
+//
+// El día de la semana se toma del navegador: se asume que quien agenda está en la zona del
+// negocio (la misma suposición que "hoy" en el Resumen). El backend es quien valida de verdad.
 
-const HORAS = Array.from({ length: 25 }, (_, i) => {
-  const minutos = 8 * 60 + i * 30;
-  return `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${minutos % 60 === 0 ? "00" : "30"}`;
-});
+const SIN_HORARIO = { abreMin: 8 * 60, cierraMin: 20 * 60 };
 
 const fechaLarga = new Intl.DateTimeFormat("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-const horaCorta = new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" });
 
 function dos(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function etiquetaHora(hhmm: string) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return horaCorta.format(new Date(2000, 0, 1, h, m));
+function hhmm(min: number) {
+  return `${dos(Math.floor(min / 60))}:${dos(min % 60)}`;
+}
+
+// Horas de inicio posibles, cada 30 min, en las que una cita de `duracionMin` termina antes del cierre.
+function horasDe(tramo: { abreMin: number; cierraMin: number }, duracionMin: number) {
+  const lista: string[] = [];
+  for (let m = tramo.abreMin; m + Math.max(duracionMin, 30) <= tramo.cierraMin; m += 30) lista.push(hhmm(m));
+  return lista;
+}
+
+function etiquetaHora(h: string) {
+  const [hh, mm] = h.split(":").map(Number);
+  return etiquetaMinutos(hh! * 60 + mm!);
 }
 
 interface Props {
   valor: string; // "YYYY-MM-DDTHH:mm" o incompleto ("YYYY-MM-DD" sin hora, "" sin nada)
   onChange: (valor: string) => void;
+  // Horario del negocio; sin él (o vacío) se ofrecen de 8:00 a 20:00.
+  horario?: HorarioDia[];
+  // Duración del servicio elegido, para no ofrecer horas en que no alcanzaría a terminar.
+  duracionMin?: number;
   // Hora que ya tenía la cita (al reagendar): se muestra aunque no haya chip para ella.
   horaActual?: string;
   // Fecha mínima del input ("YYYY-MM-DD").
@@ -37,11 +54,17 @@ interface Props {
   autoFocus?: boolean;
 }
 
-export default function SelectorFechaHora({ valor, onChange, horaActual, min, autoFocus }: Props) {
+export default function SelectorFechaHora({ valor, onChange, horario, duracionMin, horaActual, min, autoFocus }: Props) {
   const idFecha = useId();
   const idHoras = useId();
   const grupo = useRef<HTMLDivElement>(null);
   const [fecha = "", hora = ""] = valor.split("T");
+
+  const conHorario = !!horario && horario.length > 0;
+  const diaSemana = fecha ? new Date(`${fecha}T00:00`).getDay() : null;
+  const tramo = !fecha || !conHorario ? SIN_HORARIO : horario.find((d) => d.diaSemana === diaSemana);
+  const cerrado = fecha !== "" && !tramo;
+  const HORAS = tramo ? horasDe(tramo, duracionMin ?? 30) : [];
 
   const horas = horaActual && !HORAS.includes(horaActual) ? [...HORAS, horaActual].sort() : HORAS;
   const esHoy = fecha === hoyLocal();
@@ -102,8 +125,20 @@ export default function SelectorFechaHora({ valor, onChange, horaActual, min, au
 
       <div className="flex flex-col gap-1.5">
         <span id={idHoras} className="text-sm font-medium text-fg">
-          Hora {!fecha && <span className="font-normal text-muted">· elige primero la fecha</span>}
+          Hora{" "}
+          {!fecha ? (
+            <span className="font-normal text-muted">· elige primero la fecha</span>
+          ) : conHorario && tramo ? (
+            <span className="font-normal text-muted">
+              · ese día abre de {etiquetaMinutos(tramo.abreMin)} a {etiquetaMinutos(tramo.cierraMin)}
+            </span>
+          ) : null}
         </span>
+        {cerrado && (
+          <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            El negocio está cerrado ese día. Elige otra fecha.
+          </p>
+        )}
         <div
           ref={grupo}
           role="radiogroup"

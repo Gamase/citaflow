@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { citasConFecha, DATASETS, validarNegocio, type Negocio } from "./seed-data";
+import { aMinutos, citasConFecha, DATASETS, validarNegocio, type Negocio } from "./seed-data";
 
 const prisma = new PrismaClient();
 
@@ -60,6 +60,7 @@ async function main() {
       await tx.appointment.deleteMany();
       await tx.client.deleteMany();
       await tx.service.deleteMany();
+      await tx.horarioDia.deleteMany();
       await tx.user.deleteMany();
       await tx.tenant.deleteMany();
 
@@ -87,6 +88,15 @@ async function main() {
               ],
             },
           },
+        });
+
+        await tx.horarioDia.createMany({
+          data: t.horario.map((h) => ({
+            tenantId: tenant.id,
+            diaSemana: h.dia,
+            abreMin: aMinutos(h.abre),
+            cierraMin: aMinutos(h.cierra),
+          })),
         });
 
         // Uno por uno (no createMany) para conservar el orden y poder usar los índices.
