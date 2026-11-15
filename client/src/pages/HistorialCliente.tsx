@@ -6,11 +6,12 @@ import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import ErrorState from "../components/ui/ErrorState";
 import { EsqueletoLista } from "../components/ui/Esqueleto";
+import { Textarea } from "../components/ui/Field";
 import { CalendarIcon, PlusIcon } from "../components/ui/Icons";
 import PageHeader from "../components/ui/PageHeader";
 import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import Tarjeta from "../components/ui/Tarjeta";
-import { apiError } from "../components/ui/useToast";
+import { apiError, useToast } from "../components/ui/useToast";
 import { estados, type Estado } from "../lib/estados";
 import { formatFecha, formatHora, formatPrecio, formatTelefono } from "../lib/format";
 
@@ -22,7 +23,7 @@ interface CitaHistorial {
 }
 
 interface Historial {
-  cliente: { id: string; nombre: string; telefono: string; email: string | null };
+  cliente: { id: string; nombre: string; telefono: string; email: string | null; notas: string | null };
   citas: CitaHistorial[];
   resumen: {
     total: number;
@@ -89,6 +90,11 @@ export default function HistorialCliente() {
       ) : (
         <div className="space-y-6">
           <Resumen historial={historial} />
+
+          <Notas
+            cliente={historial.cliente}
+            onGuardadas={(notas) => setHistorial({ ...historial, cliente: { ...historial.cliente, notas } })}
+          />
 
           <Card>
             {historial.citas.length === 0 ? (
@@ -164,5 +170,59 @@ function Resumen({ historial }: { historial: Historial }) {
         />
       )}
     </div>
+  );
+}
+
+// Notas libres sobre el cliente. Las ven y editan dueño y empleado (PATCH /clients/:id).
+function Notas({
+  cliente,
+  onGuardadas,
+}: {
+  cliente: Historial["cliente"];
+  onGuardadas: (notas: string | null) => void;
+}) {
+  const toast = useToast();
+  const [texto, setTexto] = useState(cliente.notas ?? "");
+  const [guardando, setGuardando] = useState(false);
+  const hayCambios = texto.trim() !== (cliente.notas ?? "");
+
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault();
+    setGuardando(true);
+    try {
+      // Vacío = quitar las notas (el backend lo guarda como null).
+      const res = await api.patch(`/clients/${cliente.id}`, { notas: texto.trim() || null });
+      onGuardadas(res.data.notas ?? null);
+      setTexto(res.data.notas ?? "");
+      toast.success(res.data.notas ? "Notas guardadas." : "Notas quitadas.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudieron guardar las notas."));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="border-b border-line px-5 py-3.5">
+        <h2 className="text-base font-semibold text-fg">Notas</h2>
+        <p className="mt-0.5 text-sm text-muted">Preferencias, alergias, recordatorios… Las ve todo el equipo del negocio.</p>
+      </div>
+      <form onSubmit={guardar} className="p-5">
+        <Textarea
+          aria-label="Notas del cliente"
+          placeholder="Aún no hay notas de este cliente."
+          maxLength={2000}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+        />
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-xs text-faint tabular-nums">{texto.length}/2000</span>
+          <Button type="submit" size="sm" disabled={guardando || !hayCambios}>
+            Guardar notas
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

@@ -15,6 +15,8 @@ export interface Cliente {
   nombre: string;
   telefono: string;
   email?: string;
+  // Notas del negocio sobre el cliente (opcional). Un par de clientes las traen, para la demo.
+  notas?: string;
 }
 
 // Una cita a `dias` de hoy, a `hora`:`minuto` en hora de Tijuana. `cliente` y `servicio`
@@ -173,7 +175,12 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Alineación y balanceo", duracionMin: 60, precio: 600 },
         ],
         clientes: [
-          { nombre: "Ramiro Tovar Quezada", telefono: "6640000100", email: "ramiro.tovar@ejemplo.com" },
+          {
+            nombre: "Ramiro Tovar Quezada",
+            telefono: "6640000100",
+            email: "ramiro.tovar@ejemplo.com",
+            notas: "Prefiere citas por la mañana. Trae su propio aceite (sintético 5W-30).",
+          },
           { nombre: "Elena Barragán Soto", telefono: "6640000101" },
           { nombre: "Joel Montaño Ruiz", telefono: "6640000102", email: "joel.montano@ejemplo.com" },
           { nombre: "Patricia Ledesma Ortiz", telefono: "6640000103" },
@@ -201,7 +208,12 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Curación", duracionMin: 30, precio: 350 },
         ],
         clientes: [
-          { nombre: "Mariana Ibarra Solís", telefono: "6640000100", email: "mariana.ibarra@ejemplo.com" },
+          {
+            nombre: "Mariana Ibarra Solís",
+            telefono: "6640000100",
+            email: "mariana.ibarra@ejemplo.com",
+            notas: "Alérgica a la penicilina. Pide recordatorio por WhatsApp.",
+          },
           { nombre: "Tomás Echeverría Paz", telefono: "6640000201" },
           { nombre: "Adriana Villaseñor Rivas", telefono: "6640000202", email: "adriana.villasenor@ejemplo.com" },
           { nombre: "Gerardo Nava Olmos", telefono: "6640000203" },
@@ -233,7 +245,12 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Lavado", duracionMin: 20, precio: 120 },
         ],
         clientes: [
-          { nombre: "Daniela Fuentes Arriaga", telefono: "6640000100", email: "daniela.fuentes@ejemplo.com" },
+          {
+            nombre: "Daniela Fuentes Arriaga",
+            telefono: "6640000100",
+            email: "daniela.fuentes@ejemplo.com",
+            notas: "Cabello teñido: usar tinte sin amoniaco. Le gusta el corte en capas.",
+          },
           { nombre: "Verónica Salgado Pineda", telefono: "6640000101" },
           { nombre: "Claudia Herrera Montes", telefono: "6640000102", email: "claudia.herrera@ejemplo.com" },
           { nombre: "Gabriela Cisneros Lira", telefono: "6640000103" },
