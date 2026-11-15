@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 // Un solo PrismaClient (un solo pool de conexiones) para toda la API.
 // Se usa tal cual solo para Tenant y User, que no tienen RLS: el login busca por email
@@ -32,3 +32,14 @@ export function clienteDelTenant(tenantId: string) {
 }
 
 export type ClienteTenant = ReturnType<typeof clienteDelTenant>;
+
+// Varias escrituras del mismo negocio en UNA sola transacción (p. ej. reemplazar el horario de
+// la semana: borrar e insertar, o nada). req.db abre una transacción corta por operación, así
+// que no sirve para eso: aquí app.tenant_id se fija DENTRO de la transacción y aplica a todo lo
+// que haga `fn`, y RLS solo deja tocar filas de ese negocio.
+export function transaccionDelTenant<T>(tenantId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, TRUE)`;
+    return fn(tx);
+  });
+}

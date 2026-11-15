@@ -10,7 +10,7 @@
 // Revisa:
 //   0. Que el rol de la conexión NO sea superusuario ni tenga BYPASSRLS (a esos Postgres
 //      nunca les aplica RLS, ni con FORCE: la prueba no valdría nada).
-//   1. Con el cliente del negocio A, clients y appointments SIN where → solo filas de A.
+//   1. Con el cliente del negocio A, clients, appointments y horarioDia SIN where → solo filas de A.
 //   2. Sin tenant fijado (prisma base) → 0 filas (falla cerrado).
 //   3. Con el cliente de A, crear un cliente con el tenantId de B → error de la política.
 //   4. Con el cliente de A, modificar un cliente de B sin where tenantId → 0 filas.
@@ -23,7 +23,7 @@ try {
   // Sin .env: se usa DATABASE_URL del entorno.
 }
 
-const TABLAS = ["Service", "Client", "Appointment"];
+const TABLAS = ["Service", "Client", "Appointment", "HorarioDia"];
 const TELEFONO_PRUEBA = "5599990000";
 
 async function main() {
@@ -79,11 +79,11 @@ async function main() {
 
     const estado = await prisma.$queryRaw<{ tabla: string; rls: boolean; force: boolean }[]>`
       SELECT relname AS tabla, relrowsecurity AS rls, relforcerowsecurity AS force
-      FROM pg_class WHERE relname IN (${TABLAS[0]}, ${TABLAS[1]}, ${TABLAS[2]}) AND relkind = 'r'`;
+      FROM pg_class WHERE relname IN (${Prisma.join(TABLAS)}) AND relkind = 'r'`;
     const activo = estado.length === TABLAS.length && estado.every((t) => t.rls && t.force);
     linea(
       activo ? true : null,
-      "RLS + FORCE en Service, Client, Appointment",
+      `RLS + FORCE en ${TABLAS.join(", ")}`,
       activo ? "" : `RLS aún no activo: ${estado.map((t) => `${t.tabla} rls=${t.rls} force=${t.force}`).join(", ")}`,
     );
 
@@ -113,6 +113,16 @@ async function main() {
       const ok = filas.length === deA && filas.length > 0 && filas.every((f) => f.tenantId === a.id);
       linea(ok, `cliente de A: ${modelo}.findMany() sin where`, `ve ${filas.length} de ${total} (de A hay ${deA})`);
     }
+
+    // El horario del negocio también (un negocio sin horario ve 0, y eso es válido).
+    const horarioA = await dbA.horarioDia.findMany();
+    const horarioTotal = await conBypass((tx) => tx.horarioDia.count());
+    const horarioDeA = await conBypass((tx) => tx.horarioDia.count({ where: { tenantId: a.id } }));
+    linea(
+      horarioA.length === horarioDeA && horarioA.every((h) => h.tenantId === a.id),
+      "cliente de A: horarioDia.findMany() sin where",
+      `ve ${horarioA.length} de ${horarioTotal} (de A hay ${horarioDeA})`,
+    );
 
     // 2. Sin tenant fijado: nada.
     const sinTenant = await prisma.client.findMany();

@@ -16,6 +16,7 @@ import { Card, Table, Td, Th, Tr } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
 import { estados, type Estado } from "../lib/estados";
 import { formatDatetimeLocal, formatFecha, formatHora, hoyLocal } from "../lib/format";
+import type { HorarioDia } from "../lib/horario";
 import { miUserId } from "../lib/session";
 
 interface Client {
@@ -26,6 +27,8 @@ interface Client {
 interface Service {
   id: string;
   nombre: string;
+  // Para no ofrecer horas en que la cita no alcanzaría a terminar antes del cierre.
+  duracionMin: number;
 }
 
 // Personas activas a las que se les puede asignar una cita (GET /appointments/personas).
@@ -219,6 +222,8 @@ export default function Appointments() {
   });
   const [soloMias, setSoloMias] = useState(() => searchParams.get("mias") === "1");
   const [personas, setPersonas] = useState<Persona[]>([]);
+  // Horario de apertura del negocio: el selector solo ofrece horas abiertas (vacío = sin horario).
+  const [horario, setHorario] = useState<HorarioDia[]>([]);
   const [atiendeId, setAtiendeId] = useState("");
   // Cita que se está reasignando y a quién ("" = Sin asignar).
   const [reasignando, setReasignando] = useState<{ id: string; atiendeId: string } | null>(null);
@@ -271,6 +276,10 @@ export default function Appointments() {
       .get("/appointments/personas")
       .then((res) => setPersonas(res.data))
       .catch((err) => setErrorCarga(apiError(err, "No se pudo cargar quién atiende.")));
+    api
+      .get("/tenant/horario")
+      .then((res) => setHorario(res.data.dias))
+      .catch((err) => setErrorCarga(apiError(err, "No se pudo cargar el horario del negocio.")));
   }, [version]);
 
   function load() {
@@ -427,7 +436,13 @@ export default function Appointments() {
             </div>
             <div className="mt-5 border-t border-line pt-5">
               {/* La API rechaza citas en el pasado (400, con 5 min de margen): desde hoy, y hoy sin las horas que ya pasaron. */}
-              <SelectorFechaHora valor={fechaHora} onChange={setFechaHora} min={hoyLocal()} />
+              <SelectorFechaHora
+                valor={fechaHora}
+                onChange={setFechaHora}
+                min={hoyLocal()}
+                horario={horario}
+                duracionMin={services.find((s) => s.id === serviceId)?.duracionMin}
+              />
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setMostrarForm(false)}>
@@ -737,6 +752,8 @@ export default function Appointments() {
                   onChange={(v) => setReagendando({ id: a.id, fechaHora: v })}
                   horaActual={formatDatetimeLocal(a.fechaHora).slice(11)}
                   min={hoyLocal()}
+                  horario={horario}
+                  duracionMin={a.service.duracionMin}
                   autoFocus
                 />
                 <div className="flex flex-wrap justify-end gap-2">

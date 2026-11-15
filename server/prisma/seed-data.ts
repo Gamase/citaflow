@@ -3,6 +3,7 @@
 // pruebas (scripts/pruebas.sh). Importarlo no toca la BD.
 
 import type { EstadoCita } from "@prisma/client";
+import { enZona } from "../src/horario";
 
 export interface Servicio {
   nombre: string;
@@ -29,6 +30,14 @@ export interface CitaSemilla {
   atiende?: "dueno" | "empleado";
 }
 
+// Horario de apertura de un día: "HH:MM" en hora del negocio, de 30 en 30 min. Un día que no
+// aparece está cerrado.
+export interface HorarioSemilla {
+  dia: number; // 0 = domingo … 6 = sábado
+  abre: string;
+  cierra: string;
+}
+
 export interface Negocio {
   nombre: string;
   email: string;
@@ -39,7 +48,21 @@ export interface Negocio {
   servicios: Servicio[];
   clientes: Cliente[];
   citas: CitaSemilla[];
+  horario: HorarioSemilla[];
 }
+
+// "09:30" → 570 (minutos desde medianoche).
+export function aMinutos(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h! * 60 + m!;
+}
+
+// Horario de todos los negocios del seed: los 7 días de 9:00 a 20:00. Abierto toda la semana a
+// propósito: las citas de las agendas van de -14 a +7 días y caen en cualquier día de la semana
+// según cuándo se siembre, así que un día cerrado rompería el seed unos días sí y otros no.
+// pruebas.sh cierra un día temporalmente (PUT) para probar el 400 y luego lo restaura.
+const HORARIO_TODA_LA_SEMANA: HorarioSemilla[] = [0, 1, 2, 3, 4, 5, 6].map((dia) => ({ dia, abre: "09:00", cierra: "20:00" }));
+
 
 export interface Dataset {
   tenants: Negocio[];
@@ -162,6 +185,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Silvia Ochoa Carmona", telefono: "6640000109" },
         ],
         citas: AGENDA_A,
+        horario: HORARIO_TODA_LA_SEMANA,
       },
       {
         nombre: "Consultorio Dr. Prueba",
@@ -189,6 +213,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Esteban Rivas Treviño", telefono: "6640000209" },
         ],
         citas: AGENDA_B,
+        horario: HORARIO_TODA_LA_SEMANA,
       },
     ],
   },
@@ -220,6 +245,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Renata Gallardo Vega", telefono: "6640000109" },
         ],
         citas: AGENDA_A,
+        horario: HORARIO_TODA_LA_SEMANA,
       },
       {
         nombre: "MotorPro Servicio",
@@ -247,6 +273,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Karla Serrano Beltrán", telefono: "6640000209" },
         ],
         citas: AGENDA_B,
+        horario: HORARIO_TODA_LA_SEMANA,
       },
     ],
   },
@@ -269,6 +296,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Marco Sánchez", telefono: "6641234569" },
         ],
         citas: agendaBasica(3, 3),
+        horario: HORARIO_TODA_LA_SEMANA,
       },
       {
         nombre: "Spa Relax",
@@ -285,6 +313,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Sofía Ramírez", telefono: "6647654322" },
         ],
         citas: agendaBasica(2, 2),
+        horario: HORARIO_TODA_LA_SEMANA,
       },
     ],
   },
@@ -360,6 +389,17 @@ export function validarNegocio(negocio: Negocio, ahora = new Date()): string[] {
     if (s.precio < 0) errores.push(`${n}: precio de "${s.nombre}" negativo`);
   }
 
+  // Horario: días válidos y sin repetir, abre < cierra, de 30 en 30.
+  const diasVistos = new Set<number>();
+  for (const h of negocio.horario) {
+    if (!Number.isInteger(h.dia) || h.dia < 0 || h.dia > 6) errores.push(`${n}: día de horario ${h.dia} fuera de 0–6`);
+    if (diasVistos.has(h.dia)) errores.push(`${n}: día de horario ${h.dia} repetido`);
+    diasVistos.add(h.dia);
+    const [abre, cierra] = [aMinutos(h.abre), aMinutos(h.cierra)];
+    if (abre % 30 !== 0 || cierra % 30 !== 0) errores.push(`${n}: horario del día ${h.dia} no va de 30 en 30`);
+    if (!(abre < cierra) || cierra > 1440) errores.push(`${n}: horario del día ${h.dia} no cumple abre < cierra ≤ 24:00`);
+  }
+
   const citas = citasConFecha(negocio, ahora);
   let indicesOk = true;
   for (const c of citas) {
@@ -373,6 +413,18 @@ export function validarNegocio(negocio: Negocio, ahora = new Date()): string[] {
     }
   }
   if (!indicesOk) return errores;
+
+  // Toda cita del seed cae dentro del horario de su día (como exige la API al agendar).
+  if (negocio.horario.length > 0) {
+    for (const c of citas) {
+      const { diaSemana, minutos } = enZona(c.fechaHora, ZONA);
+      const dia = negocio.horario.find((h) => h.dia === diaSemana);
+      const fin = minutos + negocio.servicios[c.servicio]!.duracionMin;
+      if (!dia || minutos < aMinutos(dia.abre) || fin > aMinutos(dia.cierra)) {
+        errores.push(`${n}: la cita del día ${c.dias} ${hhmm(c)} cae fuera del horario de apertura`);
+      }
+    }
+  }
 
   // Choques entre citas que ocupan horario, por persona: cada una tiene su propia agenda
   // y las "Sin asignar" son una agenda más (igual que hayChoque en la API).

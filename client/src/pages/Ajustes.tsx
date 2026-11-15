@@ -4,10 +4,11 @@ import api from "../api/client";
 import Button from "../components/ui/Button";
 import ErrorState from "../components/ui/ErrorState";
 import { EsqueletoLista } from "../components/ui/Esqueleto";
-import { Field, Input } from "../components/ui/Field";
+import { Field, Input, Select } from "../components/ui/Field";
 import PageHeader from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Table";
 import { apiError, useToast } from "../components/ui/useToast";
+import { etiquetaMinutos, NOMBRE_DIA, OPCIONES_MIN, ORDEN_SEMANA, type HorarioDia } from "../lib/horario";
 import { esDueno, type ContextoSesion } from "../lib/session";
 
 interface MiCuenta {
@@ -58,6 +59,7 @@ export default function Ajustes() {
             onCreada={() => setCuenta({ ...cuenta, tienePassword: true })}
           />
           {esDueno() && <NegocioForm cuenta={cuenta} onGuardado={setCuenta} />}
+          {esDueno() && <HorarioForm />}
         </div>
       )}
     </>
@@ -297,6 +299,175 @@ function NegocioForm({ cuenta, onGuardado }: { cuenta: MiCuenta; onGuardado: (c:
         <div className="mt-5 flex justify-end">
           <Button type="submit" disabled={guardando || !cambia}>
             Guardar nombre
+          </Button>
+        </div>
+      </form>
+    </Seccion>
+  );
+}
+
+// Horario de apertura, solo el dueño. Un día desmarcado está cerrado. Sin ningún día, el negocio
+// acepta citas a cualquier hora (y se avisa). Se guarda la semana completa de un golpe.
+type Tramo = { abreMin: number; cierraMin: number };
+type Semana = Partial<Record<number, Tramo>>;
+
+const TRAMO_NUEVO: Tramo = { abreMin: 9 * 60, cierraMin: 18 * 60 };
+
+function aLista(semana: Semana): HorarioDia[] {
+  return Object.entries(semana)
+    .flatMap(([dia, t]) => (t ? [{ diaSemana: Number(dia), ...t }] : []))
+    .sort((a, b) => a.diaSemana - b.diaSemana);
+}
+
+function aSemana(dias: HorarioDia[]): Semana {
+  const semana: Semana = {};
+  for (const d of dias) semana[d.diaSemana] = { abreMin: d.abreMin, cierraMin: d.cierraMin };
+  return semana;
+}
+
+function HorarioForm() {
+  const toast = useToast();
+  const [semana, setSemana] = useState<Semana | null>(null);
+  // Lo último guardado (serializado): para saber si hay cambios y si el negocio tiene horario.
+  const [guardado, setGuardado] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+
+  function load() {
+    api
+      .get("/tenant/horario")
+      .then((res) => {
+        const s = aSemana(res.data.dias);
+        setSemana(s);
+        setGuardado(JSON.stringify(aLista(s)));
+        setErrorCarga(null);
+      })
+      .catch((err) => setErrorCarga(apiError(err, "No se pudo cargar el horario.")));
+  }
+
+  useEffect(load, []);
+
+  const descripcion = "Fuera de este horario no se pueden agendar citas. Un día desmarcado está cerrado.";
+
+  if (errorCarga) {
+    return (
+      <Seccion titulo="Horario de apertura" descripcion={descripcion}>
+        <ErrorState message={errorCarga} onRetry={load} />
+      </Seccion>
+    );
+  }
+  if (!semana) {
+    return (
+      <Seccion titulo="Horario de apertura" descripcion={descripcion}>
+        <EsqueletoLista etiqueta="Cargando horario" filas={7} avatar={false} />
+      </Seccion>
+    );
+  }
+
+  const lista = aLista(semana);
+  const hayCambios = JSON.stringify(lista) !== guardado;
+  const sinHorario = guardado === "[]";
+
+  function cambiar(dia: number, tramo: Tramo | null) {
+    const nueva = { ...semana };
+    if (tramo) nueva[dia] = tramo;
+    else delete nueva[dia];
+    setSemana(nueva);
+  }
+
+  function copiarATodos(dia: number) {
+    const t = semana?.[dia];
+    if (!t) return;
+    const nueva: Semana = {};
+    for (const d of ORDEN_SEMANA) nueva[d] = { ...t };
+    setSemana(nueva);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setGuardando(true);
+    try {
+      const res = await api.put("/tenant/horario", { dias: lista });
+      const s = aSemana(res.data.dias);
+      setSemana(s);
+      setGuardado(JSON.stringify(aLista(s)));
+      toast.success(lista.length === 0 ? "Horario quitado: se aceptan citas a cualquier hora." : "Horario guardado.");
+    } catch (err) {
+      toast.error(apiError(err, "No se pudo guardar el horario."));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Seccion titulo="Horario de apertura" descripcion={descripcion}>
+      {sinHorario && (
+        <p role="status" className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Aún no configuras tu horario; por ahora se aceptan citas a cualquier hora.
+        </p>
+      )}
+      <form onSubmit={handleSubmit}>
+        <ul className="divide-y divide-line">
+          {ORDEN_SEMANA.map((dia) => {
+            const t = semana[dia];
+            return (
+              <li key={dia} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <label className="flex w-32 items-center gap-2 text-sm font-medium text-fg">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-teal-700"
+                    checked={!!t}
+                    onChange={(e) => cambiar(dia, e.target.checked ? { ...TRAMO_NUEVO } : null)}
+                  />
+                  {NOMBRE_DIA[dia]}
+                </label>
+                {t ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-muted">
+                      de
+                      <Select
+                        aria-label={`Hora de apertura del ${NOMBRE_DIA[dia]}`}
+                        className="h-9 w-auto"
+                        value={t.abreMin}
+                        onChange={(e) => {
+                          const abre = Number(e.target.value);
+                          cambiar(dia, { abreMin: abre, cierraMin: Math.max(t.cierraMin, abre + 30) });
+                        }}
+                      >
+                        {OPCIONES_MIN.filter((m) => m < 1440).map((m) => (
+                          <option key={m} value={m}>
+                            {etiquetaMinutos(m)}
+                          </option>
+                        ))}
+                      </Select>
+                      a
+                      <Select
+                        aria-label={`Hora de cierre del ${NOMBRE_DIA[dia]}`}
+                        className="h-9 w-auto"
+                        value={t.cierraMin}
+                        onChange={(e) => cambiar(dia, { ...t, cierraMin: Number(e.target.value) })}
+                      >
+                        {OPCIONES_MIN.filter((m) => m > t.abreMin).map((m) => (
+                          <option key={m} value={m}>
+                            {etiquetaMinutos(m)}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <Button variant="link-muted" onClick={() => copiarATodos(dia)}>
+                      Copiar a todos los días
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-sm text-faint">Cerrado</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-5 flex justify-end">
+          <Button type="submit" disabled={guardando || !hayCambios}>
+            Guardar horario
           </Button>
         </div>
       </form>

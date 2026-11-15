@@ -115,6 +115,37 @@ export const negocioSchema = z.object({
   nombre: texto("El nombre del negocio"),
 });
 
+// --- Horario del negocio ---
+
+// Minutos desde medianoche, de 30 en 30 (0 = 00:00 … 1440 = 24:00).
+const minutosDelDia = z
+  .number({ error: "La hora no es válida" })
+  .int("La hora no es válida")
+  .min(0, "La hora no es válida")
+  .max(1440, "La hora no es válida")
+  .refine((m) => m % 30 === 0, "Las horas van de 30 en 30 minutos");
+
+// La semana completa: los días que no vienen quedan cerrados. Lista vacía = sin horario.
+export const horarioSchema = z.object({
+  dias: z
+    .array(
+      z
+        .object({
+          diaSemana: z
+            .number({ error: "El día no es válido" })
+            .int("El día no es válido")
+            .min(0, "El día no es válido")
+            .max(6, "El día no es válido"),
+          abreMin: minutosDelDia,
+          cierraMin: minutosDelDia,
+        })
+        .refine((d) => d.abreMin < d.cierraMin, "La hora de cierre debe ser después de la de apertura"),
+      { error: "Falta la lista de días" },
+    )
+    .max(7, "Solo hay 7 días en la semana")
+    .refine((dias) => new Set(dias.map((d) => d.diaSemana)).size === dias.length, "Hay un día repetido"),
+});
+
 // --- Services ---
 
 export const servicioSchema = z.object({
@@ -241,6 +272,7 @@ export type PasswordEmpleadoInput = z.infer<typeof passwordEmpleadoSchema>;
 export type MiCuentaInput = z.infer<typeof miCuentaSchema>;
 export type MiPasswordInput = z.infer<typeof miPasswordSchema>;
 export type NegocioInput = z.infer<typeof negocioSchema>;
+export type HorarioInput = z.infer<typeof horarioSchema>;
 export type ActivoInput = z.infer<typeof activoSchema>;
 export type ServicioInput = z.infer<typeof servicioSchema>;
 export type EditarServicioInput = z.infer<typeof editarServicioSchema>;
