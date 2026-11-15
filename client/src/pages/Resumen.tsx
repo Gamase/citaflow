@@ -203,9 +203,9 @@ export default function ResumenPage() {
             </Card>
 
             <Card className="p-5 sm:p-6">
-              <div className="mb-3 flex items-baseline justify-between">
+              <div className="mb-3 flex items-baseline justify-between gap-3">
                 <h2 className="text-base font-semibold text-fg">Servicios más pedidos en {mes}</h2>
-                <span className="text-sm text-muted">por citas</span>
+                <span className="shrink-0 text-sm text-muted">por citas</span>
               </div>
               {resumen.mes.serviciosMasPedidos.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted">Aún no hay citas este mes.</p>

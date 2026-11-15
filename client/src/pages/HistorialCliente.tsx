@@ -149,8 +149,15 @@ function Resumen({ historial }: { historial: Historial }) {
     <div className={`grid gap-4 sm:grid-cols-2 ${conGastado ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
       <Tarjeta
         titulo="Próxima cita"
-        valor={proxima ? `${formatFecha(proxima.fechaHora)} ${formatHora(proxima.fechaHora)}` : "—"}
-        detalle={proxima ? `${proxima.service.nombre} · ${estados[proxima.estado]?.label ?? proxima.estado}` : "Nada agendado"}
+        // La fecha es un texto largo: en tamaño de número se partía en tres renglones. Arriba va
+        // solo el día y la hora baja al detalle.
+        texto
+        valor={proxima ? formatFecha(proxima.fechaHora) : "—"}
+        detalle={
+          proxima
+            ? `${formatHora(proxima.fechaHora)} · ${proxima.service.nombre} · ${estados[proxima.estado]?.label ?? proxima.estado}`
+            : "Nada agendado"
+        }
       />
       <Tarjeta
         titulo="Citas"
