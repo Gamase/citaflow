@@ -234,7 +234,15 @@ ESPERADO=$(npx --no-install tsx -e "
     const ingresos = t.citas
       .filter((c) => c.estado === 'COMPLETADA')
       .reduce((suma, c) => suma + t.servicios[c.servicio]!.precio, 0);
-    return { clientes: t.clientes.length, servicios: t.servicios.length, porEstado, ingresos };
+    // Servicios más pedidos: citas no canceladas por servicio, de mayor a menor (top 5).
+    const porServicio: Record<string, number> = {};
+    for (const c of t.citas) {
+      if (c.estado === 'CANCELADA') continue;
+      const nombre = t.servicios[c.servicio]!.nombre;
+      porServicio[nombre] = (porServicio[nombre] ?? 0) + 1;
+    }
+    const masPedidos = Object.entries(porServicio).map(([nombre, citas]) => ({ nombre, citas })).sort((x, y) => y.citas - x.citas).slice(0, 5);
+    return { clientes: t.clientes.length, servicios: t.servicios.length, porEstado, ingresos, porServicio, masPedidos };
   })));
 " 2>/dev/null)
 
@@ -262,6 +270,13 @@ aislamiento() {
       String(r.mes.tasaNoAsistencia) + (r.mes.tasaNoAsistencia === tasa ? "" : " (esperado " + tasa + ")" + pista));
     const okIngresos = Math.abs(r.mes.ingresos - e.ingresos) < 0.005;
     linea(okIngresos, nombre + ": ingresos = suma de atendidas", String(r.mes.ingresos) + (okIngresos ? "" : " (esperado " + e.ingresos + ")" + pista));
+    // Top 5 por citas no canceladas: mismos conteos en el mismo orden; con empates, cualquiera
+    // de los empatados vale (se revisa que cada uno exista en el seed con ese conteo).
+    const top = r.mes.serviciosMasPedidos ?? [];
+    const okTop = JSON.stringify(top.map((s) => s.citas)) === JSON.stringify(e.masPedidos.map((s) => s.citas)) &&
+      top.every((s) => e.porServicio[s.nombre] === s.citas && !("precio" in s) && !("ingresos" in s));
+    linea(okTop, nombre + ": servicios más pedidos = seed",
+      top.map((s) => s.nombre + " ×" + s.citas).join(", ") + (okTop ? "" : " (esperado " + JSON.stringify(e.masPedidos) + ")" + pista));
     const ahora = Date.now() - 60e3;
     const okProximas = r.proximas.length <= 5 && r.proximas.every((c, j, a) =>
       new Date(c.fechaHora).getTime() >= ahora && ["PENDIENTE", "CONFIRMADA"].includes(c.estado) &&
@@ -526,6 +541,7 @@ t "empleado: ver equipo"           403 GET /users "$TE"
 t "empleado: crear empleado"       403 POST /users "$TE" '{"nombre":"X","email":"x@ejemplo.test","password":"12345678"}'
 t "empleado: resumen"              200 GET "/dashboard/resumen?$Q_OK" "$TE"
 cumple "  sin ingresos (null)"       "r.mes.ingresos === null && r.mes.total > 0"
+cumple "  sí ve servicios más pedidos" "Array.isArray(r.mes.serviciosMasPedidos) && r.mes.serviciosMasPedidos.length > 0 && r.mes.serviciosMasPedidos.every((s) => typeof s.citas === 'number' && !('precio' in s))"
 t "dueño: resumen"                 200 GET "/dashboard/resumen?$Q_OK" "$TA"
 cumple "  con ingresos"              "typeof r.mes.ingresos === 'number'"
 

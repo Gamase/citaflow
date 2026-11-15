@@ -30,6 +30,8 @@ interface Resumen {
     tasaNoAsistencia: number | null;
     // null para el empleado: el backend no se los manda.
     ingresos: number | null;
+    // Top 5 por citas no canceladas del mes (solo conteos: también lo ve el empleado).
+    serviciosMasPedidos: { id: string; nombre: string; citas: number }[];
   };
   totales: { clientes: number; servicios: number };
 }
@@ -164,34 +166,65 @@ export default function ResumenPage() {
             />
           </div>
 
-          <Card className="p-5 sm:p-6">
-            <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="text-base font-semibold text-fg">Citas de {mes} por estado</h2>
-              <span className="text-sm text-muted tabular-nums">{resumen.mes.total} en total</span>
-            </div>
-            <ul className="space-y-1">
-              {ORDEN_ESTADOS.map((e) => {
-                const cantidad = resumen.mes.porEstado[e];
-                const ancho = resumen.mes.total === 0 ? 0 : (cantidad / resumen.mes.total) * 100;
-                const { label, tone } = estados[e]!;
-                return (
-                  <li key={e}>
-                    <Link
-                      to={enCitas("mes", e)}
-                      aria-label={`${label}: ${cantidad} en ${mes}. Ver esas citas.`}
-                      className="-mx-2 grid grid-cols-[6.5rem_1fr_2.5rem] items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-canvas"
-                    >
-                      <span className="text-muted">{label}</span>
-                      <div className="h-3 overflow-hidden rounded-full bg-subtle">
-                        <div className={`h-full rounded-full ${BARRA[tone]}`} style={{ width: `${ancho}%` }} />
-                      </div>
-                      <span className="text-right text-base font-semibold text-fg tabular-nums">{cantidad}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="p-5 sm:p-6">
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="text-base font-semibold text-fg">Citas de {mes} por estado</h2>
+                <span className="text-sm text-muted tabular-nums">{resumen.mes.total} en total</span>
+              </div>
+              <ul className="space-y-1">
+                {ORDEN_ESTADOS.map((e) => {
+                  const cantidad = resumen.mes.porEstado[e];
+                  const ancho = resumen.mes.total === 0 ? 0 : (cantidad / resumen.mes.total) * 100;
+                  const { label, tone } = estados[e]!;
+                  return (
+                    <li key={e}>
+                      <Link
+                        to={enCitas("mes", e)}
+                        aria-label={`${label}: ${cantidad} en ${mes}. Ver esas citas.`}
+                        className="-mx-2 grid grid-cols-[6.5rem_1fr_2.5rem] items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-canvas"
+                      >
+                        <span className="text-muted">{label}</span>
+                        <div className="h-3 overflow-hidden rounded-full bg-subtle">
+                          <div className={`h-full rounded-full ${BARRA[tone]}`} style={{ width: `${ancho}%` }} />
+                        </div>
+                        <span className="text-right text-base font-semibold text-fg tabular-nums">{cantidad}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+
+            <Card className="p-5 sm:p-6">
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="text-base font-semibold text-fg">Servicios más pedidos en {mes}</h2>
+                <span className="text-sm text-muted">por citas</span>
+              </div>
+              {resumen.mes.serviciosMasPedidos.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted">Aún no hay citas este mes.</p>
+              ) : (
+                <ol className="space-y-1">
+                  {resumen.mes.serviciosMasPedidos.map((s, i) => {
+                    const max = resumen.mes.serviciosMasPedidos[0]!.citas;
+                    return (
+                      <li key={s.id} className="grid grid-cols-[1.25rem_1fr_2.5rem] items-center gap-3 py-2 text-sm">
+                        <span className="text-xs font-semibold text-faint tabular-nums">{i + 1}</span>
+                        <div className="min-w-0">
+                          <p className="truncate text-fg">{s.nombre}</p>
+                          <div className="mt-1 h-2 overflow-hidden rounded-full bg-subtle">
+                            <div className="h-full rounded-full bg-teal-500" style={{ width: `${(s.citas / max) * 100}%` }} />
+                          </div>
+                        </div>
+                        <span className="text-right text-base font-semibold text-fg tabular-nums">{s.citas}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+              <p className="mt-3 text-xs text-muted">Cuenta las citas del mes que no se cancelaron.</p>
+            </Card>
+          </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <ListaCitas
