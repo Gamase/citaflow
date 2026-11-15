@@ -515,11 +515,26 @@ t "empleado: borrar cliente"       403 DELETE "/clients/$CLI_E" "$TE"
 t "dueño borra ese cliente"        204 DELETE "/clients/$CLI_E" "$TA"
 t "empleado: ver equipo"           403 GET /users "$TE"
 t "empleado: crear empleado"       403 POST /users "$TE" '{"nombre":"X","email":"x@ejemplo.test","password":"12345678"}'
+# Cuántas citas del seed atiende el empleado de A (para su "hoy" del Resumen y "Mis citas"),
+# de prisma/seed-data.ts.
+N_CITAS_EMP=$(npx --no-install tsx -e "
+  import { DATASETS } from './prisma/seed-data';
+  console.log(DATASETS['$LABEL']!.tenants[0]!.citas.filter((c) => c.atiende === 'empleado').length);
+" 2>/dev/null)
 t "empleado: resumen"              200 GET "/dashboard/resumen?$Q_OK" "$TE"
 cumple "  sin ingresos (null)"       "r.mes.ingresos === null && r.mes.total > 0"
 cumple "  sí ve servicios más pedidos" "Array.isArray(r.mes.serviciosMasPedidos) && r.mes.serviciosMasPedidos.length > 0 && r.mes.serviciosMasPedidos.every((s) => typeof s.citas === 'number' && !('precio' in s))"
+# "Hoy" del Resumen: al empleado le llegan solo las citas que él atiende; al dueño, todas. Con
+# el rango ancho de arriba ("hoy" = ±16 días) deben ser tantas como le asigna el seed, y
+# exactamente las mismas que da /appointments?atiende=yo en ese rango.
+cumple "  hoy: solo sus citas"       "r.hoySoloMias === true && r.hoy.length === $N_CITAS_EMP && r.hoy.length > 0"
+HOY_EMP=$(node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1])).hoy.map((c) => c.id).sort())' "$RESP")
+Q_CITAS=$(node -p 'const q = new URLSearchParams(process.argv[1]); "desde=" + q.get("hoyDesde") + "&hasta=" + q.get("hoyHasta")' "$Q_OK")
+t "empleado: sus citas del rango"  200 GET "/appointments?atiende=yo&$Q_CITAS" "$TE"
+cumple "  las mismas que su hoy del Resumen" "JSON.stringify(r.map((c) => c.id).sort()) === '$HOY_EMP'"
 t "dueño: resumen"                 200 GET "/dashboard/resumen?$Q_OK" "$TA"
 cumple "  con ingresos"              "typeof r.mes.ingresos === 'number'"
+cumple "  hoy: todas las del negocio" "r.hoySoloMias === false && r.hoy.length > $N_CITAS_EMP"
 
 echo "== Roles: equipo (dueño)"
 # id del usuario con ese email en la lista del equipo de ese token.
@@ -619,11 +634,7 @@ t "regresar el nombre del negocio" 200 PATCH /tenant "$TA" "{\"nombre\":\"$MI_NE
 cumple "  como estaba"               "r.nombre === '$MI_NEGOCIO'"
 
 echo "== Precio guardado y quién atiende"
-# Cuántas citas del seed atiende el empleado de A (para "Mis citas"), de prisma/seed-data.ts.
-N_CITAS_EMP=$(npx --no-install tsx -e "
-  import { DATASETS } from './prisma/seed-data';
-  console.log(DATASETS['$LABEL']!.tenants[0]!.citas.filter((c) => c.atiende === 'empleado').length);
-" 2>/dev/null)
+# N_CITAS_EMP (las citas del seed que atiende el empleado de A) viene de "Roles: empleado".
 t "personas (no se lee como :id)"  200 GET /appointments/personas "$TA"
 cumple "  activas de A, sin email"   "r.some((p) => p.id === '$YO_A') && r.some((p) => p.id === '$EMP_A') && !r.some((p) => p.id === '$EMP_B') && r.every((p) => !('email' in p))"
 t "personas: el empleado también"  200 GET /appointments/personas "$TE"
