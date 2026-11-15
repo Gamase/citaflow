@@ -22,7 +22,7 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
   const tenantId = req.tenantId as string;
   const delMes = { tenantId, fechaHora: { gte: mesDesde, lt: mesHasta } };
 
-  const [hoy, proximas, porEstadoRaw, completadas, clientes, servicios] = await Promise.all([
+  const [hoy, proximas, porEstadoRaw, completadas, clientes, servicios, masPedidosRaw] = await Promise.all([
     req.db.appointment.findMany({
       where: { tenantId, fechaHora: { gte: hoyDesde, lt: hoyHasta } },
       select: CITA_CORTA,
@@ -51,7 +51,27 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
       : null,
     req.db.client.count({ where: { tenantId } }),
     req.db.service.count({ where: { tenantId } }),
+    // Servicios más pedidos del rango: por número de citas que no se cancelaron (una de
+    // "No asistió" sí se pidió). Solo conteos, sin montos: también lo ve el empleado.
+    req.db.appointment.groupBy({
+      by: ["serviceId"],
+      where: { ...delMes, estado: { not: "CANCELADA" } },
+      _count: { _all: true },
+      // Con empate, siempre el mismo orden (por id): el top no cambia entre una carga y otra.
+      orderBy: [{ _count: { serviceId: "desc" } }, { serviceId: "asc" }],
+      take: 5,
+    }),
   ]);
+
+  // Los nombres de esos servicios, en el mismo orden (del más pedido al menos).
+  const nombres = await req.db.service.findMany({
+    where: { tenantId, id: { in: masPedidosRaw.map((f) => f.serviceId) } },
+    select: { id: true, nombre: true },
+  });
+  const serviciosMasPedidos = masPedidosRaw.flatMap((f) => {
+    const s = nombres.find((n) => n.id === f.serviceId);
+    return s ? [{ id: s.id, nombre: s.nombre, citas: f._count._all }] : [];
+  });
 
   // Los 5 estados siempre presentes, en 0 si no hay citas.
   const porEstado = Object.fromEntries(Object.values(EstadoCita).map((e) => [e, 0])) as Record<EstadoCita, number>;
@@ -74,6 +94,7 @@ router.get("/resumen", validar(resumenSchema, "query"), async (req, res) => {
       tasaNoAsistencia,
       // null para el empleado: no basta con ocultarlo en el front.
       ingresos: ingresos ? ingresos.toNumber() : null,
+      serviciosMasPedidos,
     },
     totales: { clientes, servicios },
   });
