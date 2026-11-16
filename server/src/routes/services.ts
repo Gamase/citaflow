@@ -13,6 +13,8 @@ router.use(verificarToken);
 router.get("/", async (req, res) => {
   const services = await req.db.service.findMany({
     where: { tenantId: req.tenantId as string },
+    // Alfabético: sin orden, Postgres los regresa como caigan (y cambia al editar uno).
+    orderBy: { nombre: "asc" },
   });
   res.json(services);
 });

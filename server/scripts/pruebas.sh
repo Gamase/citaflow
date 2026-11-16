@@ -295,6 +295,8 @@ t "resumen negocio B"              200 GET "/dashboard/resumen?$Q_OK" "$TB"
 aislamiento "B" 1
 
 echo "== Services"
+t "servicios en orden alfabético"  200 GET /services "$TA"
+cumple "  ordenados por nombre"      "r.length > 1 && r.every((s, i) => i === 0 || r[i - 1].nombre.localeCompare(s.nombre, 'es', { sensitivity: 'base' }) <= 0)"
 t "POST sin nombre"                400 POST /services "$TA" '{"duracionMin":30,"precio":100}'
 t "POST duración 0"                400 POST /services "$TA" '{"nombre":"Prueba","duracionMin":0,"precio":100}'
 t "POST duración 2000"             400 POST /services "$TA" '{"nombre":"Prueba","duracionMin":2000,"precio":100}'
@@ -722,7 +724,8 @@ read -r DIAS_A DIAS_B DIAS_A_CERRADO <<< "$(npx --no-install tsx -e "
 # Horas de prueba: antes de abrir el día de FUT; en el siguiente día abierto después de FUT + 1,
 # una cita que termina justo al cierre (vale) y otra que se pasa 15 min (no); y FUT + 1 (el día
 # que el PUT de abajo cierra) a una hora que estaría abierta.
-DUR_A=$(primero services "$TA" duracionMin)
+# La duración de ESE servicio (por su id): "el primero de la lista" puede ser otro.
+DUR_A=$(curl -s -m 90 "$API/services" -H "Authorization: Bearer $TA" | node -pe 'JSON.parse(require("fs").readFileSync(0)).find((s) => s.id === process.argv[1]).duracionMin' "$SRV_A")
 read -r H_ANTES H_JUSTO H_PASADA H_DIA_CERRADO <<< "$(npx --no-install tsx -e "
   import { DATASETS, aMinutos, fechaTijuana } from './prisma/seed-data';
   import { enZona } from './src/horario';
