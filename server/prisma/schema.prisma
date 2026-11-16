@@ -18,6 +18,12 @@ enum EstadoCita {
 model Tenant {
   id       String   @id @default(uuid())
   nombre   String
+  // El negocio en la URL de su página pública de reservas (/reservar/<slug>): minúsculas,
+  // números y guiones. Sale del nombre al crear el negocio y ya no cambia aunque el nombre
+  // cambie (los enlaces que ya se compartieron siguen sirviendo). Opcional solo por
+  // compatibilidad: la migración llenó los negocios que ya existían, y a uno que quedara sin
+  // slug se le genera cuando alguien del negocio abre Ajustes.
+  slug     String?  @unique
   // Zona horaria (IANA) en la que se interpreta el horario de apertura. Por ahora todos los
   // negocios nacen en Tijuana y no hay UI para cambiarla.
   zonaHoraria String @default("America/Tijuana")
@@ -137,10 +143,18 @@ model Client {
   @@unique([tenantId, telefono])
 }
 
+// De dónde salió la cita: del panel (la agendó el negocio) o de la página pública de reservas
+// (la pidió el cliente; entra PENDIENTE y el negocio la confirma).
+enum OrigenCita {
+  PANEL
+  EN_LINEA
+}
+
 model Appointment {
   id        String     @id @default(uuid())
   fechaHora DateTime
   estado    EstadoCita @default(PENDIENTE)
+  origen    OrigenCita @default(PANEL)
   creadoEn  DateTime   @default(now())
 
   tenantId  String

@@ -12,6 +12,7 @@ import Ajustes from "./pages/Ajustes";
 import Verificar from "./pages/Verificar";
 import Olvide from "./pages/Olvide";
 import Restablecer from "./pages/Restablecer";
+import Reservar from "./pages/Reservar";
 import { clearSession, esDueno, getSession, LOGIN_EXPIRADA, tokenVigente } from "./lib/session";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,8 @@ function App() {
         <Route path="/verificar" element={<Verificar />} />
         <Route path="/olvide" element={<Olvide />} />
         <Route path="/restablecer" element={<Restablecer />} />
+        {/* Pública: la página de reservas de cada negocio, para sus clientes (sin cuenta). */}
+        <Route path="/reservar/:slug" element={<Reservar />} />
         <Route
           path="/dashboard"
           element={

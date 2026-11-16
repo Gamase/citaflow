@@ -23,6 +23,7 @@ import {
 } from "../schemas";
 import { consumirToken, mandarRestablecer, mandarVerificacion } from "../tokensCorreo";
 import { verificarCredencialGoogle, PerfilGoogle } from "../google";
+import { crearConSlug } from "../slug";
 
 const ENLACE_INVALIDO = "El enlace no es válido o ya venció. Pide uno nuevo.";
 
@@ -33,22 +34,27 @@ router.post("/register", limiteRegistro, validar(registroSchema), async (req, re
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  // El negocio nace con su slug (el enlace de su página pública de reservas). crearConSlug solo
+  // reintenta si lo que chocó fue el slug; un correo repetido sale por el catch de abajo.
   let tenant;
   try {
-    tenant = await prisma.tenant.create({
-      data: {
-        nombre: nombreNegocio,
-        users: {
-          create: {
-            email,
-            password: hashedPassword,
-            nombre: nombreUsuario,
-            rol: "DUENO",
+    tenant = await crearConSlug(prisma, nombreNegocio, (slug) =>
+      prisma.tenant.create({
+        data: {
+          nombre: nombreNegocio,
+          slug,
+          users: {
+            create: {
+              email,
+              password: hashedPassword,
+              nombre: nombreUsuario,
+              rol: "DUENO",
+            },
           },
         },
-      },
-      include: { users: true },
-    });
+        include: { users: true },
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return res.status(409).json({ error: "Ese correo ya está registrado" });
@@ -200,21 +206,24 @@ router.post("/google/registro", limiteRegistro, validar(googleRegistroSchema), g
 
   let tenant;
   try {
-    tenant = await prisma.tenant.create({
-      data: {
-        nombre: nombreNegocio,
-        users: {
-          create: {
-            email: perfil.email,
-            nombre: perfil.nombre,
-            rol: "DUENO",
-            googleId: perfil.sub,
-            emailVerificado: new Date(),
+    tenant = await crearConSlug(prisma, nombreNegocio, (slug) =>
+      prisma.tenant.create({
+        data: {
+          nombre: nombreNegocio,
+          slug,
+          users: {
+            create: {
+              email: perfil.email,
+              nombre: perfil.nombre,
+              rol: "DUENO",
+              googleId: perfil.sub,
+              emailVerificado: new Date(),
+            },
           },
         },
-      },
-      include: { users: true },
-    });
+        include: { users: true },
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return res.status(409).json({ error: "Ya hay una cuenta con ese correo. Inicia sesión con Google." });

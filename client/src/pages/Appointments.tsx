@@ -45,6 +45,8 @@ interface Appointment {
   service: Service;
   // null = "Sin asignar". `activo: false`: la persona fue desactivada y hay que reasignarla.
   atiende: { id: string; nombre: string; activo: boolean } | null;
+  // EN_LINEA: la pidió el cliente en la página pública de reservas.
+  origen: "PANEL" | "EN_LINEA";
 }
 
 // Estados a los que se puede llegar con una acción (a PENDIENTE nunca se vuelve)
@@ -646,7 +648,17 @@ export default function Appointments() {
               >
                 {a.client.nombre}
               </p>
-              <p className={`text-xs ${atenuada ? "text-faint" : "text-muted"}`}>{a.service.nombre}</p>
+              <p className={`text-xs ${atenuada ? "text-faint" : "text-muted"}`}>
+                {a.service.nombre}
+                {a.origen === "EN_LINEA" && (
+                  <span
+                    title="La pidió el cliente en la página de reservas"
+                    className="ml-2 rounded bg-teal-50 px-1.5 py-0.5 text-[11px] font-medium text-teal-700"
+                  >
+                    En línea
+                  </span>
+                )}
+              </p>
             </div>
           </Td>
           <Td label="Atiende">

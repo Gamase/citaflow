@@ -4,6 +4,7 @@
 
 import type { EstadoCita } from "@prisma/client";
 import { enZona } from "../src/horario";
+import { SLUG_VALIDO } from "../src/slug";
 
 export interface Servicio {
   nombre: string;
@@ -30,6 +31,9 @@ export interface CitaSemilla {
   cliente: number;
   servicio: number;
   atiende?: "dueno" | "empleado";
+  // La pidió el cliente en la página pública de reservas (Appointment.origen = EN_LINEA): en
+  // Citas sale con la etiqueta "En línea". Sin esto, la cita es del panel.
+  enLinea?: true;
 }
 
 // Horario de apertura de un día: "HH:MM" en hora del negocio, de 30 en 30 min. Un día que no
@@ -42,6 +46,9 @@ export interface HorarioSemilla {
 
 export interface Negocio {
   nombre: string;
+  // El negocio en su enlace público de reservas: /reservar/<slug>. Fijo aquí (no generado)
+  // para que los enlaces de la demo no cambien entre un seed y otro.
+  slug: string;
   email: string;
   password: string;
   nombreUsuario: string;
@@ -109,9 +116,9 @@ const AGENDA_A: CitaSemilla[] = [
   { dias: 1, hora: 16, estado: "PENDIENTE", cliente: 1, servicio: 1, atiende: "empleado" },
   { dias: 2, hora: 12, estado: "CONFIRMADA", cliente: 2, servicio: 2, atiende: "dueno" },
   { dias: 2, hora: 12, estado: "CONFIRMADA", cliente: 5, servicio: 0, atiende: "empleado" },
-  { dias: 3, hora: 10, estado: "PENDIENTE", cliente: 3, servicio: 0, atiende: "empleado" },
+  { dias: 3, hora: 10, estado: "PENDIENTE", cliente: 3, servicio: 0, atiende: "empleado", enLinea: true },
   { dias: 5, hora: 11, estado: "PENDIENTE", cliente: 4, servicio: 4, atiende: "dueno" },
-  { dias: 7, hora: 10, estado: "PENDIENTE", cliente: 6, servicio: 0 },
+  { dias: 7, hora: 10, estado: "PENDIENTE", cliente: 6, servicio: 0, enLinea: true },
 ];
 
 // Agenda del negocio B: distinta a la de A (otros conteos y otra tasa de no asistencia),
@@ -134,7 +141,7 @@ const AGENDA_B: CitaSemilla[] = [
   { dias: 0, hora: 13, estado: "PENDIENTE", cliente: 4, servicio: 1, atiende: "empleado" },
   { dias: 0, hora: 18, estado: "CONFIRMADA", cliente: 5, servicio: 0 },
   { dias: 1, hora: 12, estado: "CONFIRMADA", cliente: 6, servicio: 3 },
-  { dias: 2, hora: 10, estado: "PENDIENTE", cliente: 7, servicio: 1, atiende: "empleado" },
+  { dias: 2, hora: 10, estado: "PENDIENTE", cliente: 7, servicio: 1, atiende: "empleado", enLinea: true },
   { dias: 3, hora: 16, estado: "CANCELADA", cliente: 8, servicio: 4 },
   { dias: 4, hora: 11, estado: "PENDIENTE", cliente: 9, servicio: 0, atiende: "dueno" },
   { dias: 6, hora: 10, estado: "CONFIRMADA", cliente: 0, servicio: 2 },
@@ -163,6 +170,7 @@ export const DATASETS: Record<string, Dataset> = {
     tenants: [
       {
         nombre: "Taller El Tornillo",
+        slug: "taller-el-tornillo",
         email: "admin@tornillo.dev",
         password: "12345678",
         nombreUsuario: "Dev Tester",
@@ -196,6 +204,7 @@ export const DATASETS: Record<string, Dataset> = {
       },
       {
         nombre: "Consultorio Dr. Prueba",
+        slug: "consultorio-dr-prueba",
         email: "admin@drprueba.dev",
         password: "12345678",
         nombreUsuario: "Dev Tester 2",
@@ -233,6 +242,7 @@ export const DATASETS: Record<string, Dataset> = {
     tenants: [
       {
         nombre: "Salón Bella Vista",
+        slug: "salon-bella-vista",
         email: "admin@bellavista.test",
         password: "12345678",
         nombreUsuario: "Staging Tester",
@@ -266,6 +276,7 @@ export const DATASETS: Record<string, Dataset> = {
       },
       {
         nombre: "MotorPro Servicio",
+        slug: "motorpro-servicio",
         email: "admin@motorpro.test",
         password: "12345678",
         nombreUsuario: "Staging Tester 2",
@@ -298,6 +309,7 @@ export const DATASETS: Record<string, Dataset> = {
     tenants: [
       {
         nombre: "Barbería El Corte",
+        slug: "barberia-el-corte",
         email: "admin@barberia.com",
         password: "12345678",
         nombreUsuario: "Juan Pérez",
@@ -317,6 +329,7 @@ export const DATASETS: Record<string, Dataset> = {
       },
       {
         nombre: "Spa Relax",
+        slug: "spa-relax",
         email: "admin@sparelax.com",
         password: "12345678",
         nombreUsuario: "María López",
@@ -387,6 +400,8 @@ const hhmm = (c: CitaSemilla) => `${c.hora}:${String(c.minuto ?? 0).padStart(2, 
 export function validarNegocio(negocio: Negocio, ahora = new Date()): string[] {
   const errores: string[] = [];
   const n = negocio.nombre;
+
+  if (!SLUG_VALIDO.test(negocio.slug)) errores.push(`${n}: el slug "${negocio.slug}" solo puede llevar minúsculas, números y guiones`);
 
   const telefonos = new Set<string>();
   for (const c of negocio.clientes) {

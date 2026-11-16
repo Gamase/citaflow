@@ -33,6 +33,11 @@ async function main() {
   for (const repetido of new Set(emails.filter((e, i) => emails.indexOf(e) !== i))) {
     errores.push(`El email ${repetido} se repite (los emails son únicos en todo CitaFlow)`);
   }
+  // El slug también es único en toda la BD: es el enlace público de reservas de cada negocio.
+  const slugs = dataset.tenants.map((t) => t.slug);
+  for (const repetido of new Set(slugs.filter((s, i) => slugs.indexOf(s) !== i))) {
+    errores.push(`El slug ${repetido} se repite (cada negocio tiene su propio enlace de reservas)`);
+  }
   if (errores.length > 0) {
     throw new Error(`Los datos del seed "${label}" no cumplen las reglas:\n  - ${errores.join("\n  - ")}`);
   }
@@ -69,6 +74,7 @@ async function main() {
         const tenant = await tx.tenant.create({
           data: {
             nombre: t.nombre,
+            slug: t.slug,
             users: {
               create: [
                 {
@@ -123,6 +129,7 @@ async function main() {
             // Como hace la API al agendar: el precio del servicio queda guardado en la cita.
             precio: t.servicios[c.servicio]!.precio,
             atiendeId: c.atiende ? idDe[c.atiende] : null,
+            origen: c.enLinea ? ("EN_LINEA" as const) : ("PANEL" as const),
           })),
         });
 
@@ -136,6 +143,7 @@ async function main() {
   for (const t of dataset.tenants) {
     console.log(`  - ${t.nombre}: ${t.email} / ${t.password} (dueño)`);
     console.log(`    ${" ".repeat(t.nombre.length)}  ${t.empleado.email} / ${t.empleado.password} (empleado: ${t.empleado.nombre})`);
+    console.log(`    ${" ".repeat(t.nombre.length)}  reservas en línea: /reservar/${t.slug}`);
   }
 
   await imprimirDatosDeDemo(creados, ahora);

@@ -25,6 +25,8 @@ export default function Ajustes() {
   const [cuenta, setCuenta] = useState<MiCuenta | null>(null);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  // Sube al guardar el horario: la tarjeta de reservas vuelve a preguntar si ya puede recibirlas.
+  const [versionHorario, setVersionHorario] = useState(0);
 
   function load() {
     api
@@ -59,7 +61,8 @@ export default function Ajustes() {
             onCreada={() => setCuenta({ ...cuenta, tienePassword: true })}
           />
           {esDueno() && <NegocioForm cuenta={cuenta} onGuardado={setCuenta} />}
-          {esDueno() && <HorarioForm />}
+          {esDueno() && <ReservasEnLinea version={versionHorario} />}
+          {esDueno() && <HorarioForm onGuardado={() => setVersionHorario((v) => v + 1)} />}
         </div>
       )}
     </>
@@ -325,7 +328,7 @@ function aSemana(dias: HorarioDia[]): Semana {
   return semana;
 }
 
-function HorarioForm() {
+function HorarioForm({ onGuardado }: { onGuardado: () => void }) {
   const toast = useToast();
   const [semana, setSemana] = useState<Semana | null>(null);
   // Lo último guardado (serializado): para saber si hay cambios y si el negocio tiene horario.
@@ -392,6 +395,7 @@ function HorarioForm() {
       setSemana(s);
       setGuardado(JSON.stringify(aLista(s)));
       toast.success(lista.length === 0 ? "Horario quitado: se aceptan citas a cualquier hora." : "Horario guardado.");
+      onGuardado();
     } catch (err) {
       toast.error(apiError(err, "No se pudo guardar el horario."));
     } finally {
@@ -471,6 +475,65 @@ function HorarioForm() {
           </Button>
         </div>
       </form>
+    </Seccion>
+  );
+}
+
+// El enlace público de reservas del negocio (/reservar/<slug>), para compartirlo con sus
+// clientes. Solo funciona si el negocio tiene horario y al menos un servicio.
+function ReservasEnLinea({ version }: { version: number }) {
+  const toast = useToast();
+  const [datos, setDatos] = useState<{ slug: string | null; tieneHorario: boolean; tieneServicios: boolean } | null>(null);
+
+  useEffect(() => {
+    api
+      .get("/tenant/reservas")
+      .then((res) => setDatos(res.data))
+      .catch(() => setDatos(null));
+  }, [version]);
+
+  if (!datos?.slug) return null;
+
+  const enlace = `${window.location.origin}/reservar/${datos.slug}`;
+  const falta = !datos.tieneHorario
+    ? "Configura tu horario de apertura (abajo) para empezar a recibir reservas."
+    : !datos.tieneServicios
+      ? "Da de alta al menos un servicio para empezar a recibir reservas."
+      : null;
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(enlace);
+      toast.success("Enlace copiado.");
+    } catch {
+      toast.error("No se pudo copiar. Selecciona el enlace y cópialo a mano.");
+    }
+  }
+
+  return (
+    <Seccion
+      titulo="Reservas en línea"
+      descripcion="Comparte este enlace con tus clientes: eligen servicio y hora, y la cita te llega como pendiente."
+    >
+      {falta && (
+        <p role="status" className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {falta}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input aria-label="Enlace público de reservas" className="min-w-0 flex-1" value={enlace} readOnly onFocus={(e) => e.target.select()} />
+        <Button variant="secondary" onClick={copiar}>
+          Copiar enlace
+        </Button>
+        <a
+          href={enlace}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-teal-700 hover:underline"
+        >
+          Abrir
+        </a>
+      </div>
     </Seccion>
   );
 }

@@ -1,4 +1,4 @@
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 
 // Límites por IP en las rutas públicas de auth, y por usuario al confirmar la contraseña actual. Mandan los encabezados estándar
 // RateLimit / RateLimit-Policy para que el cliente sepa cuánto le queda.
@@ -79,4 +79,39 @@ export const limiteOlvideCorreo = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: { error: "Ya pediste varios enlaces para ese correo. Espera una hora e intenta de nuevo." },
+});
+
+// --- Página pública de reservas (/public): sin sesión, todo es por IP ---
+
+// Lecturas (datos del negocio y horas libres).
+export const limitePublicoLectura = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Demasiadas consultas. Espera un minuto e intenta de nuevo." },
+});
+
+// Intentos de reserva: cuentan todos, salgan bien o mal (cada uno trabaja la BD).
+export const limiteReservaIntentos = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Demasiados intentos de reserva desde esta red. Espera 15 minutos e intenta de nuevo." },
+});
+
+// Reservas que sí se crearon: por IP y por negocio. Es el freno a quien quiera llenarle la
+// agenda a un negocio; las rechazadas no cuentan. 10 por hora, como el registro: en una escuela
+// u oficina muchos comparten IP. Va después de negocioDelSlug (el slug ya es de un negocio real).
+export const limiteReservasCreadas = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  skipFailedRequests: true,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? "")}|${String(req.params.slug)}`,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    error: "Se alcanzó el límite de reservas en línea desde esta red para este negocio. Intenta más tarde o comunícate con el negocio.",
+  },
 });

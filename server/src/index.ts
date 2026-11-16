@@ -9,6 +9,7 @@ import dashboardRoutes from "./routes/dashboard";
 import userRoutes from "./routes/users";
 import meRoutes from "./routes/me";
 import tenantRoutes from "./routes/tenant";
+import publicRoutes from "./routes/public";
 import { manejarErrores } from "./middleware/errores";
 
 // En DEV las variables vienen de server/.env; en Staging/Prod (Render, PM2) del entorno,
@@ -69,6 +70,8 @@ app.use("/dashboard", dashboardRoutes);
 app.use("/users", userRoutes);
 app.use("/me", meRoutes);
 app.use("/tenant", tenantRoutes);
+// Página pública de reservas: sin token; el negocio sale del slug de la URL.
+app.use("/public", publicRoutes);
 
 app.use(manejarErrores);
 

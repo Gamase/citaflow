@@ -12,6 +12,8 @@
 #
 # Cada corrida hace 6 logins fallidos y el límite es 10 por IP cada 15 min: una segunda corrida
 # seguida desde la misma IP da 429 en los logins. Espera 15 min (o en DEV reinicia la API).
+# También registra 3 negocios (límite: 10 por hora por IP) y hace ~30 intentos de reserva en
+# línea (límite: 60 cada 15 min por IP).
 #
 # Variables opcionales:
 #   ORIGEN_OK=<url del front>  también prueba que ese origen SÍ pase CORS.
@@ -765,6 +767,194 @@ t "restaurar el horario del seed"  200 PUT /tenant/horario "$TA" "{\"dias\":$DIA
 cumple "  como el seed"              "($NORM)(r.dias) === ($NORM)($DIAS_A)"
 for c in "$C_JUSTO" "$C_LIBRE"; do
   t "cancelar cita de esta sección" 200 PATCH "/appointments/$c/estado" "$TA" '{"estado":"CANCELADA"}'
+done
+
+echo "== Reservas en línea (página pública)"
+# La página pública no usa token: el negocio sale del slug de la URL. Casi todo se prueba en un
+# negocio nuevo que registra esta sección (R): nace con una sola persona (su dueño), y como es
+# nuevo en cada corrida no arrastra reservas ni el límite de "reservas creadas por IP y negocio".
+# En el negocio A (varias personas) van el aislamiento y los datos que se exponen.
+#
+# Fechas: el primer día abierto de A a partir de +20 días (fuera del ±16 del Resumen y dentro
+# de los 30 días que acepta la página), calculado del horario de prisma/seed-data.ts. R usa ese
+# mismo horario. PUB_H<k> = la hora de apertura + k medias horas.
+eval "$(npx --no-install tsx -e "
+  import { DATASETS, aMinutos, fechaTijuana } from './prisma/seed-data';
+  import { enZona } from './src/horario';
+  const [a, b] = DATASETS['$LABEL']!.tenants;
+  const tramo = (d: number) => a!.horario.find((h) => h.dia === enZona(fechaTijuana(d, 12), 'America/Tijuana').diaSemana);
+  let dias = 20;
+  while (!tramo(dias) && dias < 29) dias++;
+  if (!tramo(dias)) throw new Error('El seed no abre ningún día entre +20 y +29');
+  const abre = aMinutos(tramo(dias)!.abre), cierra = aMinutos(tramo(dias)!.cierra);
+  if (abre < 30 || abre + 600 > cierra) throw new Error('El horario del seed debe abrir después de las 0:30 y al menos 10 h');
+  const en = (min: number) => fechaTijuana(dias, Math.floor(min / 60), min % 60).toISOString();
+  const horas = Array.from({ length: 13 }, (_, k) => 'PUB_H' + k + '=' + en(abre + k * 30));
+  console.log(horas.join(' '), 'PUB_ANTES=' + en(abre - 30), 'PUB_ABRE=' + abre, 'PUB_CIERRA=' + cierra,
+    'PUB_FECHA=' + new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tijuana' }).format(fechaTijuana(dias, 12)),
+    'SLUG_A=' + a!.slug, 'SLUG_B=' + b!.slug);
+" 2>/dev/null)"
+[ -n "${PUB_H0:-}" ] || { echo "No se pudieron calcular las fechas de las reservas desde prisma/seed-data.ts" >&2; exit 1; }
+
+# verifica "descripción" <0 = bien> "detalle": para comprobaciones que no son una sola petición.
+verifica() {
+  TOTAL=$((TOTAL + 1))
+  if [ "$2" = "0" ]; then printf "✅ %-40s %s\n" "$1" "$3"; else FALLAS=$((FALLAS + 1)); printf "❌ %-40s %s\n" "$1" "$3"; fi
+}
+# Dato del payload de un token (sin verificar la firma: solo para leer ids).
+del_token() { node -e 'console.log(JSON.parse(Buffer.from(process.argv[1].split(".")[1], "base64url"))[process.argv[2]])' "$1" "$2"; }
+# Citas de un negocio en el día de las reservas de prueba (para verlas desde su panel).
+citas_del_dia() { curl -s -m 90 "$API/appointments?desde=$PUB_H0&hasta=$(node -p "new Date(new Date('$PUB_H0').getTime() + 12 * 3600e3).toISOString()")" -H "Authorization: Bearer $1"; }
+# reserva <servicio> <hora> <teléfono> [nombre] [campos extra JSON] → body de una reserva.
+reserva() { printf '{"serviceId":"%s","fechaHora":"%s","telefono":"%s","nombre":"%s"%s}' "$1" "$2" "$3" "${4:-Cliente en línea}" "${5:+,$5}"; }
+TEL_P="66478$(printf %05d $((RANDOM * 3 % 100000)))"
+TEL_PA="66479$(printf %05d $((RANDOM * 3 % 100000)))"
+
+# --- Lo que se expone (negocio A, con varias personas) ---
+ESP_PUB=$(npx --no-install tsx -e "
+  import { DATASETS } from './prisma/seed-data';
+  console.log(JSON.stringify(DATASETS['$LABEL']!.tenants.slice(0, 2).map((t) => ({
+    nombre: t.nombre,
+    servicios: t.servicios.map((s) => s.nombre).sort(),
+    pila: [t.nombreUsuario, t.empleado.nombre].map((n) => n.split(' ')[0]),
+    apellidos: t.empleado.nombre.split(' ').slice(1),
+    correos: [t.email, t.empleado.email],
+    enLinea: t.citas.filter((c) => c.enLinea).length,
+  }))));
+" 2>/dev/null)
+IDS_SRV_A=$(curl -s -m 90 "$API/services" -H "Authorization: Bearer $TA" | node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(0)).map((s) => s.id))')
+t "público: negocio A por su slug"  200 GET "/public/$SLUG_A"
+cumple "  solo los campos acordados"  "JSON.stringify(Object.keys(r).sort()) === JSON.stringify(['diasAdelante','horario','nombre','personal','recibeReservas','servicios','zonaHoraria']) && r.recibeReservas === true"
+cumple "  servicios de A: nombre, duración y precio" "((e) => r.nombre === e.nombre && JSON.stringify(r.servicios.map((s) => s.nombre).sort()) === JSON.stringify(e.servicios) && r.servicios.every((s) => JSON.stringify(Object.keys(s).sort()) === JSON.stringify(['duracionMin','id','nombre','precio']) && $IDS_SRV_A.includes(s.id)))($ESP_PUB[0])"
+cumple "  personal: solo id y nombre de pila" "((e) => r.personal.length >= 2 && r.personal.every((p) => JSON.stringify(Object.keys(p).sort()) === JSON.stringify(['id','nombre']) && !/\\s/.test(p.nombre)) && e.pila.every((n) => r.personal.some((p) => p.nombre === n)))($ESP_PUB[0])"
+cumple "  sin correos ni apellidos"   "((e, txt) => !txt.includes('@') && e.correos.every((c) => !txt.includes(c)) && e.apellidos.every((a) => !txt.includes(a)) && !txt.includes('telefono') && !txt.includes('password'))($ESP_PUB[0], JSON.stringify(r))"
+t "público: negocio B por su slug"  200 GET "/public/$SLUG_B"
+cumple "  aislamiento: solo lo de B"  "((e) => r.nombre === e.nombre && JSON.stringify(r.servicios.map((s) => s.nombre).sort()) === JSON.stringify(e.servicios) && r.servicios.every((s) => !$IDS_SRV_A.includes(s.id)))($ESP_PUB[1])"
+t "público: slug inexistente"       404 GET "/public/no-existe-$RANDOM"
+t "público: slug con mayúsculas"    404 GET "/public/${SLUG_A^^}"
+h "público (lectura) con rate limit" sí RateLimit-Policy GET "/public/$SLUG_A"
+t "citas del seed pedidas en línea" 200 GET "/appointments?$Q_CITAS" "$TA"
+cumple "  marcadas EN_LINEA, las demás PANEL" "r.filter((c) => c.origen === 'EN_LINEA').length === $ESP_PUB[0].enLinea && r.every((c) => ['EN_LINEA', 'PANEL'].includes(c.origen))"
+
+# --- El enlace del negocio (slug) ---
+t "enlace de reservas (dueño de A)" 200 GET /tenant/reservas "$TA"
+cumple "  su slug, con horario y servicios" "r.slug === '$SLUG_A' && r.tieneHorario === true && r.tieneServicios === true"
+t "enlace de reservas (empleado)"   200 GET /tenant/reservas "$TE"
+cumple "  el mismo slug"              "r.slug === '$SLUG_A'"
+t "enlace de reservas sin token"    401 GET /tenant/reservas
+
+# --- Negocio nuevo R: nace con slug y con una sola persona ---
+NOMBRE_R="Estética Ñandú & Co. $RANDOM$RANDOM"
+SLUG_R_ESP=$(npx --no-install tsx -e "import { slugDe } from './src/slug'; console.log(slugDe(process.argv[1]!))" "$NOMBRE_R" 2>/dev/null)
+t "registro: negocio R"            201 POST /auth/register "" "{\"nombreNegocio\":\"$NOMBRE_R\",\"nombreUsuario\":\"Rita Dueña Sola\",\"email\":\"delivered+r$RANDOM$RANDOM@resend.dev\",\"password\":\"12345678\"}"
+TR=$(campo "$RESP" token)
+t "R: su enlace de reservas"       200 GET /tenant/reservas "$TR"
+cumple "  slug sin acentos ni símbolos" "r.slug === '$SLUG_R_ESP' && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(r.slug) && r.tieneHorario === false && r.tieneServicios === false"
+SLUG_R=$(campo "$RESP" slug)
+t "registro: otro negocio con el mismo nombre" 201 POST /auth/register "" "{\"nombreNegocio\":\"$NOMBRE_R\",\"nombreUsuario\":\"Otra Dueña\",\"email\":\"delivered+s$RANDOM$RANDOM@resend.dev\",\"password\":\"12345678\"}"
+t "  su enlace de reservas"        200 GET /tenant/reservas "$(campo "$RESP" token)"
+cumple "  slug distinto: termina en -2" "r.slug === '$SLUG_R_ESP-2'"
+
+t "R: crear un servicio"           201 POST /services "$TR" '{"nombre":"Corte de prueba","duracionMin":30,"precio":100}'
+SRV_R=$(campo "$RESP" id)
+YO_R=$(primero appointments/personas "$TR" id)
+# Sin horario todavía: la página dice que no recibe reservas y no expone nada más.
+t "R sin horario: página pública"  200 GET "/public/$SLUG_R"
+cumple "  no recibe reservas, solo su nombre" "r.recibeReservas === false && r.nombre === '$NOMBRE_R' && JSON.stringify(Object.keys(r).sort()) === JSON.stringify(['nombre','recibeReservas'])"
+t "R sin horario: horas libres"    409 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=$PUB_FECHA"
+t "R sin horario: reservar"        409 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H0" "$TEL_P")"
+t "R: poner su horario"            200 PUT /tenant/horario "$TR" "{\"dias\":$DIAS_A}"
+t "R con horario: página pública"  200 GET "/public/$SLUG_R"
+cumple "  recibe reservas; una sola persona: sin lista" "r.recibeReservas === true && r.personal.length === 0 && r.servicios.length === 1 && r.servicios[0].id === '$SRV_R' && !JSON.stringify(r).includes('Rita')"
+
+# --- Horas libres ---
+t "horas libres de un día"         200 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=$PUB_FECHA"
+cumple "  de la apertura al cierre, cada 30 min" "r.huecos.length === ($PUB_CIERRA - $PUB_ABRE - 30) / 30 + 1 && r.huecos[0] === '$PUB_H0' && r.huecos[1] === '$PUB_H1' && r.huecos.every((h, i, a) => i === 0 || new Date(h) - new Date(a[i - 1]) === 30 * 60e3)"
+t "horas: fecha mal escrita"       400 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=manana"
+t "horas: fecha que no existe"     400 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=2027-02-30"
+t "horas: sin servicio"            400 GET "/public/$SLUG_R/huecos?fecha=$PUB_FECHA"
+t "horas: servicio de otro negocio" 404 GET "/public/$SLUG_R/huecos?serviceId=$SRV_A&fecha=$PUB_FECHA"
+t "horas: persona de otro negocio" 404 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=$PUB_FECHA&atiendeId=$EMP_A"
+t "horas de hoy"                   200 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=$(node -p "new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tijuana' }).format(new Date())")"
+cumple "  ninguna a menos de 1 hora"  "r.huecos.every((h) => new Date(h).getTime() >= Date.now() + 59 * 60e3)"
+
+# --- Dos personas, la misma hora: solo entra una ---
+# N peticiones a la vez → "cuántas×código" de cada respuesta. $1 = N públicas, $2 = N del panel, $3 = hora.
+a_la_vez() {
+  local dir i; dir=$(mktemp -d)
+  for i in $(seq 1 "$1"); do
+    curl -s -m 90 -o /dev/null -w "%{http_code}\n" -X POST "$API/public/$SLUG_R/reservas" -H "$J" \
+      --data-raw "$(reserva "$SRV_R" "$3" "66477$(printf %03d $((RANDOM % 1000)))$(printf %02d "$i")" "Simultáneo $i")" > "$dir/pub$i" &
+  done
+  for i in $(seq 1 "$2"); do
+    curl -s -m 90 -o /dev/null -w "%{http_code}\n" -X POST "$API/appointments" -H "$J" -H "Authorization: Bearer $TR" \
+      --data-raw "{\"clientId\":\"$CLI_R\",\"serviceId\":\"$SRV_R\",\"fechaHora\":\"$3\",\"atiendeId\":\"$YO_R\"}" > "$dir/panel$i" &
+  done
+  wait
+  cat "$dir"/* | sort | uniq -c | awk '{ printf "%s×%s ", $1, $2 }' | sed 's/ $//'
+  rm -rf "$dir"
+}
+CODIGOS=$(a_la_vez 8 0 "$PUB_H0")
+[ "$CODIGOS" = "1×201 7×409" ]; verifica "8 reservas a la vez, misma hora: entra 1" $? "$CODIGOS"
+t "esa hora ya no se ofrece"       200 GET "/public/$SLUG_R/huecos?serviceId=$SRV_R&fecha=$PUB_FECHA"
+cumple "  y las demás siguen libres"  "!r.huecos.includes('$PUB_H0') && r.huecos[0] === '$PUB_H1'"
+# Negocio de una sola persona: la reserva se le asigna a ella (no queda "Sin asignar").
+citas_del_dia "$TR" > "$RESP"
+cumple "una sola persona: se le asigna la cita" "((c) => c.length === 1 && c[0].atiende && c[0].atiende.id === '$YO_R' && c[0].origen === 'EN_LINEA' && c[0].estado === 'PENDIENTE' && Number(c[0].precio) === 100)(r.filter((c) => c.fechaHora === '$PUB_H0'))"
+CLI_R=$(campo "$RESP" 0.clientId)
+# Página pública contra panel, a la vez y para la misma agenda: el candado es el mismo.
+CODIGOS=$(a_la_vez 4 4 "$PUB_H2")
+[ "$CODIGOS" = "1×201 7×409" ]; verifica "4 públicas + 4 del panel a la vez: entra 1" $? "$CODIGOS"
+
+# --- Validaciones al reservar ---
+t "reservar: teléfono de 9 dígitos" 400 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H4" 664000123)"
+t "reservar: sin nombre"           400 POST "/public/$SLUG_R/reservas" "" "{\"serviceId\":\"$SRV_R\",\"fechaHora\":\"$PUB_H4\",\"telefono\":\"$TEL_P\"}"
+t "reservar: hora que no se ofrece (:07)" 400 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$(node -p "new Date(new Date('$PUB_H4').getTime() + 7 * 60e3).toISOString()")" "$TEL_P")"
+t "reservar: en 20 minutos"        400 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$(node -p 'new Date(Date.now() + 20 * 60e3).toISOString()')" "$TEL_P")"
+t "reservar: a más de 30 días"     400 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$FUT" "$TEL_P")"
+t "reservar: antes de abrir"       400 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_ANTES" "$TEL_P")"
+t "reservar: servicio de otro negocio" 404 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_A" "$PUB_H4" "$TEL_P")"
+t "reservar: persona de otro negocio" 404 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H4" "$TEL_P" "" "\"atiendeId\":\"$EMP_A\"")"
+t "reservar: hora ya ocupada"      409 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H0" "$TEL_P")"
+h "reservar con rate limit"        sí RateLimit-Policy POST "/public/$SLUG_R/reservas" "" "" '{}'
+
+# --- El cliente se reconoce por su teléfono y no se pisa ---
+t "reservar: teléfono nuevo"       201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H4" "$TEL_P" "Nombre Original")"
+cumple "  confirmación mínima, PENDIENTE" "JSON.stringify(Object.keys(r).sort()) === JSON.stringify(['atiende','duracionMin','estado','fechaHora','negocio','servicio']) && r.estado === 'PENDIENTE' && r.fechaHora === '$PUB_H4' && r.negocio === '$NOMBRE_R'"
+FORMA_1=$(node -pe 'JSON.stringify(Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1]))).sort())' "$RESP")
+t "reservar: el mismo teléfono, otro nombre" 201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H6" "$TEL_P" "Nombre Cambiado" '"email":"otro@ejemplo.test"')"
+cumple "  misma respuesta que con uno nuevo" "JSON.stringify(Object.keys(r).sort()) === '$FORMA_1' && !JSON.stringify(r).includes('$TEL_P')"
+t "R: ese cliente en el panel"     200 GET "/clients?q=$TEL_P" "$TR"
+cumple "  uno solo, con su nombre original" "r.length === 1 && r[0].nombre === 'Nombre Original' && r[0].email === null"
+CLI_P=$(campo "$RESP" 0.id)
+# Tope: con 3 citas por venir, ese teléfono ya no puede pedir otra en línea. La tercera se
+# agenda desde el panel (que además no puede marcarla como "en línea").
+t "panel: tercera cita de ese cliente" 201 POST /appointments "$TR" "{\"clientId\":\"$CLI_P\",\"serviceId\":\"$SRV_R\",\"fechaHora\":\"$PUB_H8\",\"atiendeId\":\"$YO_R\",\"origen\":\"EN_LINEA\"}"
+cumple "  el panel no decide el origen" "r.origen === 'PANEL'"
+CITA_3=$(campo "$RESP" id)
+t "reservar: ya tiene 3 por venir" 409 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H10" "$TEL_P")"
+t "panel: cancelar una"            200 PATCH "/appointments/$CITA_3/estado" "$TR" '{"estado":"CANCELADA"}'
+t "reservar: con 2 por venir, sí"  201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H10" "$TEL_P")"
+
+# --- Aislamiento: la reserva cae en el negocio del slug, diga lo que diga el body ---
+TID_B=$(del_token "$TB" tenantId)
+t "reservar en A con tenantId de B en el body" 201 POST "/public/$SLUG_A/reservas" "" "$(reserva "$SRV_A" "$PUB_H0" "$TEL_PA" "Reserva en la web" "\"tenantId\":\"$TID_B\",\"clientId\":\"$CLI_B\",\"estado\":\"CONFIRMADA\",\"origen\":\"PANEL\",\"precio\":1")"
+cumple "  varias personas: queda sin asignar" "r.atiende === null && r.estado === 'PENDIENTE'"
+citas_del_dia "$TA" > "$RESP"
+cumple "  está en A: en línea, pendiente, a su precio" "((c) => c.length === 1 && c[0].tenantId === '$(del_token "$TA" tenantId)' && c[0].origen === 'EN_LINEA' && c[0].estado === 'PENDIENTE' && Number(c[0].precio) === Number('$PRECIO_A') && c[0].atiende === null && c[0].client.nombre === 'Reserva en la web')(r.filter((c) => c.client.telefono === '$TEL_PA'))"
+CITA_PA=$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1])).find((c) => c.client.telefono === process.argv[2]).id' "$RESP" "$TEL_PA")
+citas_del_dia "$TB" > "$RESP"
+cumple "  y no en B"                  "!r.some((c) => c.client.telefono === '$TEL_PA')"
+t "B no tiene ese cliente"         200 GET "/clients?q=$TEL_PA" "$TB"
+cumple "  (aislamiento)"              "r.length === 0"
+t "reservar en A eligiendo a una persona" 201 POST "/public/$SLUG_A/reservas" "" "$(reserva "$SRV_A" "$PUB_H4" "$TEL_PA" "" "\"atiendeId\":\"$EMP_A\"")"
+cumple "  responde su nombre de pila" "r.atiende === $ESP_PUB[0].pila[1]"
+citas_del_dia "$TA" > "$RESP"
+cumple "  la cita queda con esa persona" "r.some((c) => c.fechaHora === '$PUB_H4' && c.client.telefono === '$TEL_PA' && c.atiende && c.atiende.id === '$EMP_A')"
+CITA_PA2=$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1])).find((c) => c.fechaHora === process.argv[2] && c.client.telefono === process.argv[3]).id' "$RESP" "$PUB_H4" "$TEL_PA")
+# Se cancelan las de A para que otra corrida encuentre libres esas horas (R es nuevo cada vez).
+for c in "$CITA_PA" "$CITA_PA2"; do
+  t "cancelar reserva de esta sección" 200 PATCH "/appointments/$c/estado" "$TA" '{"estado":"CANCELADA"}'
 done
 
 echo "== Correo: verificación y olvidé"
