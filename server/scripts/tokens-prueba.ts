@@ -10,6 +10,8 @@
 //   npx tsx scripts/tokens-prueba.ts contar  <email> <TIPO>      → cuántos tokens de ese tipo tiene
 //   npx tsx scripts/tokens-prueba.ts sin-password <email>         → crea un negocio con un dueño
 //        sin contraseña (como si se hubiera registrado con Google) e imprime "userId tenantId"
+//   npx tsx scripts/tokens-prueba.ts sin-recordatorio <tenantId> <citaId> → le quita a esa cita la
+//        marca del recordatorio (como si se hubiera agendado hace más de 24 h); imprime 1 si la tocó
 //   TIPO: VERIFICACION | RESET
 //
 // BD: DATABASE_URL del entorno. Solo con USAR_ENV_DE_DEV=1 (pruebas.sh lo pone en `dev`) la
@@ -41,6 +43,15 @@ async function main() {
     const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
     if (comando === "userid") {
       console.log(user?.id ?? "");
+      return;
+    }
+    if (comando === "sin-recordatorio") {
+      // Appointment tiene RLS: se entra como ese negocio (aquí `email` trae el tenantId).
+      const { transaccionDelTenant } = await import("../src/db");
+      const { count } = await transaccionDelTenant(email as string, (tx) =>
+        tx.appointment.updateMany({ where: { id: tipoTexto, tenantId: email }, data: { recordatorioEnviadoEn: null } }),
+      );
+      console.log(count);
       return;
     }
     if (comando === "sin-password") {

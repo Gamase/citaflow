@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { EstadoCita, Prisma } from "@prisma/client";
 import { hayChoque } from "../agenda";
+import { avisarCita, avisosAlAgendar } from "../avisosCita";
 import { conCandadoDelNegocio } from "../db";
 import { fueraDeHorario } from "../horario";
 import { verificarToken } from "../middleware/auth";
@@ -147,13 +148,28 @@ router.post("/", validar(citaSchema), async (req, res) => {
         atiendeId,
         // Se congela el precio de hoy: si después cambia el del servicio, esta cita no cambia.
         precio: service.precio,
+        // Si el cliente tiene email, se le avisa de esta cita (confirmación y recordatorio).
+        ...avisosAlAgendar(client.email, fechaHora),
       },
     });
-    return { ok: true as const, cita };
+    const negocio = await tx.tenant.findUnique({ where: { id: tenantId }, select: { nombre: true, zonaHoraria: true } });
+    return { ok: true as const, cita, negocio, servicio: service.nombre, atiende: persona.nombre };
   });
 
   if (!resultado.ok) {
     return res.status(resultado.status).json({ error: resultado.error });
+  }
+  // Ya guardada y fuera del candado: el correo no se espera ni puede tumbar la respuesta.
+  if (resultado.negocio) {
+    avisarCita("confirmacion", {
+      para: resultado.cita.emailAviso,
+      negocio: resultado.negocio.nombre,
+      zonaHoraria: resultado.negocio.zonaHoraria,
+      servicio: resultado.servicio,
+      fechaHora: resultado.cita.fechaHora,
+      atiende: resultado.atiende,
+      estado: resultado.cita.estado,
+    });
   }
   res.status(201).json(resultado.cita);
 });
@@ -192,20 +208,37 @@ router.patch("/:id", validar(reagendarSchema), async (req, res) => {
 
     // Se condiciona al estado leído: si otra petición la canceló entre medio, no se mueve.
     // (Cambiar de estado no toma el candado: cancelar o marcar una cita no crea choques.)
+    // La fecha nueva tiene su propio recordatorio (o, si es en menos de 24 h, el aviso del cambio).
+    const cambioDeFecha = appointment.fechaHora.getTime() !== fechaHora.getTime();
     const { count } = await tx.appointment.updateMany({
       where: { id: appointment.id, tenantId, estado: actual },
-      data: { fechaHora },
+      data: {
+        fechaHora,
+        ...(cambioDeFecha && { recordatorioEnviadoEn: avisosAlAgendar(appointment.emailAviso, fechaHora).recordatorioEnviadoEn }),
+      },
     });
     if (count === 0) {
       return falla(409, "La cita cambió de estado mientras tanto. Recarga e intenta de nuevo.");
     }
 
     const cita = await tx.appointment.findFirst({ where: { id: appointment.id, tenantId }, include: CON_DETALLE });
-    return { ok: true as const, cita };
+    const negocio = await tx.tenant.findUnique({ where: { id: tenantId }, select: { nombre: true, zonaHoraria: true } });
+    return { ok: true as const, cita, negocio, cambioDeFecha };
   });
 
   if (!resultado.ok) {
     return res.status(resultado.status).json({ error: resultado.error });
+  }
+  if (resultado.cita && resultado.negocio && resultado.cambioDeFecha) {
+    avisarCita("cambio", {
+      para: resultado.cita.emailAviso,
+      negocio: resultado.negocio.nombre,
+      zonaHoraria: resultado.negocio.zonaHoraria,
+      servicio: resultado.cita.service.nombre,
+      fechaHora: resultado.cita.fechaHora,
+      atiende: resultado.cita.atiende?.nombre ?? null,
+      estado: resultado.cita.estado,
+    });
   }
   res.json(resultado.cita);
 });

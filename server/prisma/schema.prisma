@@ -174,4 +174,11 @@ model Appointment {
   // Cada persona tiene su propia agenda: el choque de horario se revisa por persona.
   atiendeId String?
   atiende   User?    @relation(fields: [atiendeId], references: [id])
+
+  // Correo al que se avisa de esta cita (confirmación y recordatorio). Desde el panel es el
+  // del cliente al agendar; en línea, el que escribió quien reserva. null = sin avisos.
+  emailAviso String?
+  // Cuándo se mandó (o se dio por mandado) el recordatorio: sirve para no mandarlo dos veces.
+  // También se marca al agendar con menos de 24 h: la confirmación ya hace de recordatorio.
+  recordatorioEnviadoEn DateTime?
 }

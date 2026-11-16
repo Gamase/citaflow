@@ -21,6 +21,8 @@
 #                              ajustar TRUST_PROXY). Ej.: IP_REAL=$(curl -s -4 https://api.ipify.org)
 #   JWT_SECRET=<el del entorno> prueba que un token bien firmado pero de un usuario o negocio
 #                              que ya no existe dé 401. Sin ella ese caso se salta.
+#   CRON_SECRET=<el del entorno> corre el trabajo de recordatorios (POST /tareas/recordatorios).
+#                              Si la API lo tiene y aquí falta, esos casos se saltan.
 #   ESTRICTO=1                 falla si algún caso se salta (⏭️). El CI lo usa: ahí no debe
 #                              saltarse nada.
 #   PROBAR_429=1               al final fuerza el rate limit del login (429). Deja tu IP
@@ -925,7 +927,7 @@ h "reservar con rate limit"        sí RateLimit-Policy POST "/public/$SLUG_R/re
 t "reservar: teléfono nuevo"       201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H4" "$TEL_P" "Nombre Original")"
 cumple "  confirmación mínima, PENDIENTE" "JSON.stringify(Object.keys(r).sort()) === JSON.stringify(['atiende','duracionMin','estado','fechaHora','negocio','servicio']) && r.estado === 'PENDIENTE' && r.fechaHora === '$PUB_H4' && r.negocio === '$NOMBRE_R'"
 FORMA_1=$(node -pe 'JSON.stringify(Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1]))).sort())' "$RESP")
-t "reservar: el mismo teléfono, otro nombre" 201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H6" "$TEL_P" "Nombre Cambiado" '"email":"otro@ejemplo.test"')"
+t "reservar: el mismo teléfono, otro nombre" 201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$PUB_H6" "$TEL_P" "Nombre Cambiado" '"email":"delivered+otro@resend.dev"')"
 cumple "  misma respuesta que con uno nuevo" "JSON.stringify(Object.keys(r).sort()) === '$FORMA_1' && !JSON.stringify(r).includes('$TEL_P')"
 t "R: ese cliente en el panel"     200 GET "/clients?q=$TEL_P" "$TR"
 cumple "  uno solo, con su nombre original" "r.length === 1 && r[0].nombre === 'Nombre Original' && r[0].email === null"
@@ -1086,6 +1088,88 @@ if [ -n "$CON_BD" ]; then
   else
     t "olvidé le pone contraseña"      200 POST /auth/restablecer "" "{\"token\":\"$(tk emitir "$SIN_PASS" RESET)\",\"password\":\"creada-123\"}"
     t "  y ya entra con ella"          200 POST /auth/login "" "{\"email\":\"$SIN_PASS\",\"password\":\"creada-123\"}"
+  fi
+fi
+
+echo "== Correos de citas (confirmación y recordatorio)"
+# Sin RESEND_API_KEY (DEV, CI) los correos van a la consola del server; con ella (Staging) se
+# mandan a direcciones de prueba de Resend. Aquí se prueba lo que se ve por la API: a quién se
+# avisa, la marca del recordatorio y el trabajo del cron. Todo en el negocio R de arriba.
+# CERCA<k>: cuatro medias horas seguidas, dentro del horario del seed, que empiezan en más de
+# 70 min y en menos de 24 h (si hoy ya no caben, las primeras de mañana).
+eval "$(npx --no-install tsx -e "
+  import { DATASETS, aMinutos, fechaTijuana } from './prisma/seed-data';
+  import { enZona } from './src/horario';
+  const a = DATASETS['$LABEL']!.tenants[0]!;
+  const ahora = Date.now();
+  for (let d = 0; d < 3; d++) {
+    const tramo = a.horario.find((h) => h.dia === enZona(fechaTijuana(d, 12), 'America/Tijuana').diaSemana);
+    if (!tramo) continue;
+    for (let m = aMinutos(tramo.abre); m + 120 <= aMinutos(tramo.cierra); m += 30) {
+      const en = (k: number) => fechaTijuana(d, Math.floor((m + k * 30) / 60), (m + k * 30) % 60);
+      if (en(0).getTime() < ahora + 70 * 60e3 || en(3).getTime() > ahora + 23.5 * 3600e3) continue;
+      console.log([0, 1, 2, 3].map((k) => 'CERCA' + k + '=' + en(k).toISOString()).join(' '));
+      process.exit(0);
+    }
+  }
+" 2>/dev/null)"
+[ -n "${CERCA0:-}" ] || { echo "No hay 2 horas seguidas abiertas en las próximas 24 h según el horario del seed" >&2; exit 1; }
+CORREO_C="delivered+c$RANDOM$RANDOM@resend.dev"
+citas_cerca() { curl -s -m 90 "$API/appointments?desde=$CERCA0&hasta=$(node -p "new Date(new Date('$CERCA0').getTime() + 3 * 3600e3).toISOString()")" -H "Authorization: Bearer $TR"; }
+panel_r() { printf '{"clientId":"%s","serviceId":"%s","fechaHora":"%s","atiendeId":"%s"}' "$1" "$SRV_R" "$2" "$YO_R"; }
+
+t "R: cliente con email"           201 POST /clients "$TR" "{\"nombre\":\"Con Correo\",\"telefono\":\"66476$(printf %05d $((RANDOM * 3 % 100000)))\",\"email\":\"$CORREO_C\"}"
+CLI_C=$(campo "$RESP" id)
+t "panel: cita lejana, cliente con email" 201 POST /appointments "$TR" "$(panel_r "$CLI_C" "$PUB_H12")"
+cumple "  guarda a quién avisar; recordatorio por mandar" "r.emailAviso === '$CORREO_C' && r.recordatorioEnviadoEn === null"
+CITA_L=$(campo "$RESP" id)
+t "panel: cita en menos de 24 h"   201 POST /appointments "$TR" "$(panel_r "$CLI_C" "$CERCA0")"
+cumple "  la confirmación ya cuenta como recordatorio" "r.emailAviso === '$CORREO_C' && r.recordatorioEnviadoEn !== null"
+CITA_C=$(campo "$RESP" id)
+t "panel: cliente sin email"       201 POST /appointments "$TR" "$(panel_r "$CLI_P" "$CERCA1")"
+cumple "  sin correo no hay avisos"  "r.emailAviso === null && r.recordatorioEnviadoEn === null"
+t "en línea con email, en menos de 24 h" 201 POST "/public/$SLUG_R/reservas" "" "$(reserva "$SRV_R" "$CERCA2" "66475$(printf %05d $((RANDOM * 3 % 100000)))" "Reserva con correo" "\"email\":\"$CORREO_C\"")"
+cumple "  la respuesta no trae el correo" "!JSON.stringify(r).includes('@') && !('emailAviso' in r)"
+citas_cerca > "$RESP"
+cumple "  la cita sí: avisa a ese correo, ya marcada" "((c) => c && c.origen === 'EN_LINEA' && c.emailAviso === '$CORREO_C' && c.recordatorioEnviadoEn !== null)(r.find((c) => c.fechaHora === '$CERCA2'))"
+t "reagendar la lejana a menos de 24 h" 200 PATCH "/appointments/$CITA_L" "$TR" "{\"fechaHora\":\"$CERCA3\"}"
+cumple "  el aviso del cambio cuenta como recordatorio" "r.recordatorioEnviadoEn !== null"
+t "reagendarla otra vez a lo lejos" 200 PATCH "/appointments/$CITA_L" "$TR" "{\"fechaHora\":\"$PUB_H12\"}"
+cumple "  vuelve a quedar por recordar" "r.recordatorioEnviadoEn === null && r.emailAviso === '$CORREO_C'"
+
+# El trabajo del cron: POST /tareas/recordatorios con el secreto en X-Cron-Secret. Si la API no
+# tiene CRON_SECRET responde 503 (y el resto no aplica).
+tarea() { curl -s -m 90 -o "$RESP" -w "%{http_code}" -X POST "$API/tareas/recordatorios" ${1:+-H "X-Cron-Secret: $1"}; }
+if [ "$(tarea)" = "503" ]; then
+  t "recordatorios: API sin CRON_SECRET" 503 POST /tareas/recordatorios
+  echo "   (esta API no tiene CRON_SECRET: los casos del trabajo no aplican)"
+else
+  t "recordatorios: sin secreto"     401 POST /tareas/recordatorios
+  [ "$(tarea "no-es-el-secreto")" = "401" ]; verifica "recordatorios: secreto incorrecto" $? "$(head -c 60 "$RESP")"
+  if [ -z "${CRON_SECRET:-}" ]; then
+    saltar "Se salta: define CRON_SECRET (el de esta API) para correr el trabajo de recordatorios."
+  else
+    [ "$(tarea "$CRON_SECRET")" = "200" ]; verifica "recordatorios: con el secreto" $? "$(head -c 60 "$RESP")"
+    [ "$(tarea "$CRON_SECRET")" = "200" ]
+    cumple "  otra vez: ya no queda ninguno" "r.enviados === 0 && r.fallidos === 0"
+    if [ -n "$CON_BD" ]; then
+      # Una cita que se agendó con más de 24 h llega a la ventana sin marca. Aquí no se puede
+      # esperar un día: el helper le quita la marca a la de menos de 24 h, directo en la BD.
+      TID_R=$(del_token "$TR" tenantId)
+      [ "$(tk sin-recordatorio "$TID_R" "$CITA_C")" = "1" ]; verifica "(helper) cita sin marca de recordatorio" $? ""
+      [ "$(tarea "$CRON_SECRET")" = "200" ]
+      cumple "recordatorio: se manda uno" "r.enviados === 1 && r.fallidos === 0"
+      citas_cerca > "$RESP"
+      cumple "  y la cita queda marcada"  "r.find((c) => c.id === '$CITA_C').recordatorioEnviadoEn !== null"
+      [ "$(tarea "$CRON_SECRET")" = "200" ]
+      cumple "  no se manda dos veces"    "r.enviados === 0"
+      t "cancelar esa cita"            200 PATCH "/appointments/$CITA_C/estado" "$TR" '{"estado":"CANCELADA"}'
+      [ "$(tk sin-recordatorio "$TID_R" "$CITA_C")" = "1" ]; verifica "(helper) otra vez sin marca" $? ""
+      [ "$(tarea "$CRON_SECRET")" = "200" ]
+      cumple "  a una cancelada no se le recuerda" "r.enviados === 0"
+    else
+      saltar "Se salta el envío del recordatorio: define DATABASE_URL (la BD de esta API)."
+    fi
   fi
 fi
 
