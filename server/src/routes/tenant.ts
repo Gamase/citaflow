@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { transaccionDelTenant } from "../db";
+import { prisma, transaccionDelTenant } from "../db";
 import { soloDueno, verificarToken } from "../middleware/auth";
 import { validar } from "../middleware/validar";
 import { horarioSchema, negocioSchema, HorarioInput, NegocioInput } from "../schemas";
+import { asegurarSlug } from "../slug";
 
 // Datos del negocio de quien hace la petición. El id sale del token, nunca de la URL ni del body.
 const router = Router();
@@ -50,6 +51,19 @@ router.put("/horario", soloDueno, validar(horarioSchema), async (req, res) => {
   });
   const tenant = await req.db.tenant.findUnique({ where: { id: tenantId }, select: { zonaHoraria: true } });
   res.json({ zonaHoraria: tenant?.zonaHoraria ?? null, dias: guardados });
+});
+
+// Reservas en línea: el slug del negocio (su enlace público es /reservar/<slug> en el front) y
+// lo que le falta para recibir reservas. Lo puede ver cualquiera del negocio; lo muestra Ajustes.
+router.get("/reservas", async (req, res) => {
+  const tenantId = req.tenantId as string;
+  const [slug, diasAbiertos, servicios] = await Promise.all([
+    // Con el prisma base: el slug es único entre TODOS los negocios y Tenant no tiene RLS.
+    asegurarSlug(prisma, tenantId),
+    req.db.horarioDia.count({ where: { tenantId } }),
+    req.db.service.count({ where: { tenantId } }),
+  ]);
+  res.json({ slug, tieneHorario: diasAbiertos > 0, tieneServicios: servicios > 0 });
 });
 
 export default router;

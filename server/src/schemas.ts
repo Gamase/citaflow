@@ -206,6 +206,34 @@ export const reagendarSchema = citaSchema.pick({ fechaHora: true });
 // Reasignar: a otra persona o a "Sin asignar" (null). La llave es obligatoria.
 export const reasignarSchema = z.object({ atiendeId });
 
+// --- Reservas en línea (página pública) ---
+// El negocio nunca viene en estos datos: sale del slug de la URL.
+
+// Horas libres de un día: el servicio, el día ("AAAA-MM-DD", en la zona del negocio) y,
+// si el cliente eligió con quién, esa persona.
+export const huecosSchema = z.object({
+  serviceId: id("el servicio"),
+  fecha: z
+    .string({ error: "Falta la fecha" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha debe tener el formato AAAA-MM-DD")
+    // Que exista: "2026-02-30" tiene buen formato pero JavaScript lo recorrería a marzo.
+    .refine((f) => {
+      const d = new Date(`${f}T00:00:00Z`);
+      return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(f);
+    }, "Esa fecha no existe"),
+  atiendeId: z.uuid({ error: "La persona que atiende no es válida" }).optional(),
+});
+
+// Lo que manda el cliente final al reservar.
+export const reservaSchema = z.object({
+  serviceId: id("el servicio"),
+  atiendeId: atiendeId.optional(),
+  fechaHora: citaSchema.shape.fechaHora,
+  nombre: texto("Tu nombre").max(100, "El nombre no puede pasar de 100 caracteres"),
+  telefono: clienteSchema.shape.telefono,
+  email: email.optional(),
+});
+
 export const estadoSchema = z.object({
   estado: z.enum(EstadoCita, { error: "Estado no válido" }),
 });
@@ -287,6 +315,8 @@ export type ClienteInput = z.infer<typeof clienteSchema>;
 export type EditarClienteInput = z.infer<typeof editarClienteSchema>;
 export type CitaInput = z.infer<typeof citaSchema>;
 export type ReasignarInput = z.infer<typeof reasignarSchema>;
+export type HuecosInput = z.infer<typeof huecosSchema>;
+export type ReservaInput = z.infer<typeof reservaSchema>;
 export type ReagendarInput = z.infer<typeof reagendarSchema>;
 export type EstadoInput = z.infer<typeof estadoSchema>;
 export type ResumenInput = z.infer<typeof resumenSchema>;

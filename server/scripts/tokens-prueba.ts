@@ -35,6 +35,7 @@ async function main() {
   // Después de fijar DATABASE_URL: db.ts crea el PrismaClient al importarse.
   const { prisma } = await import("../src/db");
   const { emitirToken, hashToken } = await import("../src/tokensCorreo");
+  const { slugLibre } = await import("../src/slug");
 
   try {
     const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
@@ -46,6 +47,7 @@ async function main() {
       const tenant = await prisma.tenant.create({
         data: {
           nombre: "Prueba sin contraseña",
+          slug: await slugLibre(prisma, "Prueba sin contraseña"),
           users: {
             create: {
               email: email as string,

@@ -43,3 +43,25 @@ export function transaccionDelTenant<T>(tenantId: string, fn: (tx: Prisma.Transa
     return fn(tx);
   });
 }
+
+// Agendar, reagendar, reasignar (panel) y reservar en línea corren aquí: una transacción del
+// negocio (con app.tenant_id fijado dentro, como transaccionDelTenant) que empieza tomando un
+// candado de Postgres por negocio. Sin él, revisar el choque y guardar la cita son dos pasos
+// sueltos: dos peticiones simultáneas pueden pasar las dos la revisión y quedar encimadas.
+// Con él, las del mismo negocio pasan de una en una: la segunda espera (milisegundos) a que la
+// primera termine y entonces sí ve su cita. El candado se suelta solo al terminar la
+// transacción, con commit o con rollback.
+//
+// Dentro de `fn` se usa SOLO `tx`: pedir otra conexión (req.db) con el candado tomado puede
+// dejar el pool atorado (todas las conexiones esperando el candado, y quien lo tiene esperando
+// una conexión). El tiempo de espera es más amplio que el default por si hay fila.
+export function conCandadoDelNegocio<T>(tenantId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, TRUE)`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId}, 0))`;
+      return fn(tx);
+    },
+    { maxWait: 5000, timeout: 10000 },
+  );
+}
