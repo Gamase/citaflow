@@ -5,7 +5,9 @@
 #   ~/citaflow/scripts/deploy-prod.sh
 #
 # Pasos: git pull → dependencias del server → build del client → prisma migrate deploy
-#        → pm2 restart → copia a la carpeta de Nginx.
+#        (con el admin: DATABASE_URL_ADMIN) → pm2 restart → copia a la carpeta de Nginx.
+# La API corre con citaflow_app (DATABASE_URL); las migraciones, con citaflow_admin, el dueño de
+# las tablas (ver server/scripts/roles-prod.sql).
 # El client se compila antes de tocar la base o el backend: si el build falla,
 # producción queda intacta. Nunca corre el seed. Se detiene ante el primer error.
 #
@@ -32,6 +34,7 @@ main() {
   [[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || falla "La EC2 no está en la rama main."
   [[ -z "$(git status --porcelain --untracked-files=no)" ]] || falla "Hay cambios locales sin commitear en la EC2 (git status). Resuélvelos antes de desplegar."
   [[ -f server/.env ]] || falla "Falta server/.env (DATABASE_URL, JWT_SECRET)."
+  grep -q '^DATABASE_URL_ADMIN=' server/.env || falla "Falta DATABASE_URL_ADMIN en server/.env (las migraciones corren con el admin)."
   grep -q '^VITE_API_URL=' client/.env.production 2>/dev/null || falla "Falta VITE_API_URL en client/.env.production."
   pm2 describe "$PM2_APP" >/dev/null 2>&1 || falla "PM2 no tiene un proceso llamado $PM2_APP."
   [[ -d "$NGINX_DIR" ]] || falla "No existe $NGINX_DIR."
@@ -57,9 +60,9 @@ main() {
   [[ -f dist/index.html ]] || falla "El build no generó dist/index.html."
 
   # ── 3. Base de datos y reinicio ───────────────────────────────────────────
-  paso "4/6 Migraciones (prisma migrate deploy — sin seed)"
+  paso "4/6 Migraciones (prisma migrate deploy con el admin — sin seed)"
   cd "$REPO_DIR/server"
-  npx prisma migrate deploy
+  bash scripts/como-admin.sh npx prisma migrate deploy
 
   paso "5/6 Reiniciando $PM2_APP"
   pm2 restart "$PM2_APP"
