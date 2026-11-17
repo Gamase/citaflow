@@ -13,7 +13,8 @@ export interface Correo {
   asunto: string;
   // Texto del correo en párrafos (sin HTML; se escapa).
   parrafos: string[];
-  boton: { texto: string; url: string };
+  // Opcional: los avisos de citas no llevan enlace.
+  boton?: { texto: string; url: string };
   pie: string;
 }
 
@@ -26,6 +27,11 @@ function html(c: Correo): string {
   const parrafos = c.parrafos
     .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:#0E2A3B">${escapar(p)}</p>`)
     .join("");
+  const boton = c.boton
+    ? `<p style="margin:24px 0"><a href="${escapar(c.boton.url)}" style="display:inline-block;background:#0B7A6E;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 20px;border-radius:8px">${escapar(c.boton.texto)}</a></p>
+<p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#5B6B77">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escapar(c.boton.url)}</span></p>
+`
+    : "";
   return `<!doctype html>
 <html lang="es"><body style="margin:0;padding:0;background:#F6F7F9;font-family:Inter,Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F6F7F9;padding:24px 0">
@@ -34,9 +40,7 @@ function html(c: Correo): string {
 <tr><td style="background:#0E2A3B;padding:20px 28px;font-size:20px;font-weight:700;color:#ffffff">Cita<span style="color:#12A594">Flow</span></td></tr>
 <tr><td style="padding:28px">
 ${parrafos}
-<p style="margin:24px 0"><a href="${escapar(c.boton.url)}" style="display:inline-block;background:#0B7A6E;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 20px;border-radius:8px">${escapar(c.boton.texto)}</a></p>
-<p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#5B6B77">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escapar(c.boton.url)}</span></p>
-<p style="margin:16px 0 0;font-size:13px;line-height:1.5;color:#5B6B77">${escapar(c.pie)}</p>
+${boton}<p style="margin:16px 0 0;font-size:13px;line-height:1.5;color:#5B6B77">${escapar(c.pie)}</p>
 </td></tr>
 </table>
 </td></tr>
@@ -45,7 +49,7 @@ ${parrafos}
 }
 
 function texto(c: Correo): string {
-  return [...c.parrafos, "", `${c.boton.texto}: ${c.boton.url}`, "", c.pie, "", "— CitaFlow"].join("\n");
+  return [...c.parrafos, "", ...(c.boton ? [`${c.boton.texto}: ${c.boton.url}`, ""] : []), c.pie, "", "— CitaFlow"].join("\n");
 }
 
 export async function enviarCorreo(c: Correo): Promise<boolean> {

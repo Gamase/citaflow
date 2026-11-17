@@ -1,5 +1,6 @@
 import { Router, RequestHandler } from "express";
 import { LIBERAN_HORARIO, hayChoque, seEnciman, sumarMinutos } from "../agenda";
+import { avisarCita, avisosAlAgendar } from "../avisosCita";
 import { clienteDelTenant, conCandadoDelNegocio, prisma } from "../db";
 import { diaSemanaDe, enZona, fueraDeHorario, instanteEnZona } from "../horario";
 import { limitePublicoLectura, limiteReservaIntentos, limiteReservasCreadas } from "../middleware/limites";
@@ -246,6 +247,8 @@ router.post(
           // Como en el panel: el precio de hoy queda guardado en la cita.
           precio: service.precio,
           origen: "EN_LINEA",
+          // Se avisa al correo que escribió quien reserva; si no puso, al que ya tenía el cliente.
+          ...avisosAlAgendar(email ?? client.email, fechaHora),
         },
       });
 
@@ -256,6 +259,17 @@ router.post(
     if (!resultado.ok) {
       return res.status(resultado.status).json({ error: resultado.error });
     }
+
+    // Ya guardada y fuera del candado: el correo no se espera ni puede tumbar la reserva.
+    avisarCita("confirmacion", {
+      para: resultado.cita.emailAviso,
+      negocio: negocio.nombre,
+      zonaHoraria: negocio.zonaHoraria,
+      servicio: resultado.service.nombre,
+      fechaHora: resultado.cita.fechaHora,
+      atiende: resultado.atiende,
+      estado: resultado.cita.estado,
+    });
 
     // La confirmación que ve quien reservó: nada del cliente guardado (ni si ya existía).
     res.status(201).json({

@@ -10,6 +10,7 @@ import userRoutes from "./routes/users";
 import meRoutes from "./routes/me";
 import tenantRoutes from "./routes/tenant";
 import publicRoutes from "./routes/public";
+import tareasRoutes from "./routes/tareas";
 import { manejarErrores } from "./middleware/errores";
 
 // En DEV las variables vienen de server/.env; en Staging/Prod (Render, PM2) del entorno,
@@ -72,6 +73,8 @@ app.use("/me", meRoutes);
 app.use("/tenant", tenantRoutes);
 // Página pública de reservas: sin token; el negocio sale del slug de la URL.
 app.use("/public", publicRoutes);
+// Trabajos que dispara un cron externo (recordatorios): protegidos con CRON_SECRET.
+app.use("/tareas", tareasRoutes);
 
 app.use(manejarErrores);
 

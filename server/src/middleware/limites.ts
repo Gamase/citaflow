@@ -115,3 +115,12 @@ export const limiteReservasCreadas = rateLimit({
     error: "Se alcanzó el límite de reservas en línea desde esta red para este negocio. Intenta más tarde o comunícate con el negocio.",
   },
 });
+
+// Tareas del cron (/tareas): quien no trae el secreto recibe 401; esto frena a quien lo adivine a fuerza bruta.
+export const limiteTareas = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Demasiadas llamadas. Espera 15 minutos." },
+});
