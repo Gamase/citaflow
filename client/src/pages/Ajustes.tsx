@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import api from "../api/client";
+import QrReservas from "../components/QrReservas";
 import Button from "../components/ui/Button";
 import ErrorState from "../components/ui/ErrorState";
 import { EsqueletoLista } from "../components/ui/Esqueleto";
@@ -513,26 +514,30 @@ function ReservasEnLinea({ version }: { version: number }) {
   return (
     <Seccion
       titulo="Reservas en línea"
-      descripcion="Comparte este enlace con tus clientes: eligen servicio y hora, y la cita te llega como pendiente."
+      descripcion="Comparte este enlace (o su código QR, para imprimirlo) con tus clientes: eligen servicio y hora, y la cita te llega como pendiente."
     >
       {falta && (
         <p role="status" className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {falta}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Input aria-label="Enlace público de reservas" className="min-w-0 flex-1" value={enlace} readOnly onFocus={(e) => e.target.select()} />
-        <Button variant="secondary" onClick={copiar}>
-          Copiar enlace
-        </Button>
-        <a
-          href={enlace}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-teal-700 hover:underline"
-        >
-          Abrir
-        </a>
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <Input aria-label="Enlace público de reservas" className="min-w-0 basis-full sm:basis-auto sm:flex-1" value={enlace} readOnly onFocus={(e) => e.target.select()} />
+          <Button variant="secondary" onClick={copiar}>
+            Copiar enlace
+          </Button>
+          <a
+            href={enlace}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-teal-700 hover:underline"
+          >
+            Abrir
+          </a>
+        </div>
+        {/* Como el aviso: mientras el negocio no pueda recibir reservas, no hay QR que imprimir. */}
+        {!falta && <QrReservas enlace={enlace} slug={datos.slug} />}
       </div>
     </Seccion>
   );
