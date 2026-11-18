@@ -148,17 +148,18 @@ const AGENDA_B: CitaSemilla[] = [
 ];
 
 // Agenda corta de Producción (la de siempre): una cita por estado, repartiendo clientes
-// y servicios en orden.
+// y servicios en orden. Tres las atiende el empleado (una hoy, para su "Mis citas de hoy") y
+// dos el dueño; el resto queda "Sin asignar".
 function agendaBasica(nClientes: number, nServicios: number): CitaSemilla[] {
-  const base: Pick<CitaSemilla, "dias" | "hora" | "estado">[] = [
-    { estado: "COMPLETADA", dias: -2, hora: 10 },
+  const base: Pick<CitaSemilla, "dias" | "hora" | "estado" | "atiende">[] = [
+    { estado: "COMPLETADA", dias: -2, hora: 10, atiende: "empleado" },
     { estado: "NO_ASISTIO", dias: -1, hora: 12 },
-    { estado: "CONFIRMADA", dias: -1, hora: 16 },
-    { estado: "CONFIRMADA", dias: 0, hora: 18 },
+    { estado: "CONFIRMADA", dias: -1, hora: 16, atiende: "dueno" },
+    { estado: "CONFIRMADA", dias: 0, hora: 18, atiende: "empleado" },
     { estado: "CANCELADA", dias: 1, hora: 10 },
     { estado: "PENDIENTE", dias: 1, hora: 10 },
-    { estado: "PENDIENTE", dias: 1, hora: 16 },
-    { estado: "CONFIRMADA", dias: 2, hora: 11 },
+    { estado: "PENDIENTE", dias: 1, hora: 16, atiende: "empleado" },
+    { estado: "CONFIRMADA", dias: 2, hora: 11, atiende: "dueno" },
   ];
   return base.map((c, i) => ({ ...c, cliente: i % nClientes, servicio: i % nServicios }));
 }
@@ -320,7 +321,7 @@ export const DATASETS: Record<string, Dataset> = {
           { nombre: "Corte + barba", duracionMin: 45, precio: 220 },
         ],
         clientes: [
-          { nombre: "Pedro Pérez", telefono: "6641234567" },
+          { nombre: "Pedro Pérez", telefono: "6641234567", notas: "Corte con máquina del 2 a los lados. Prefiere los sábados." },
           { nombre: "Luis Gómez", telefono: "6641234568" },
           { nombre: "Marco Sánchez", telefono: "6641234569" },
         ],
